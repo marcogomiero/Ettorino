@@ -1,0 +1,16 @@
+# Variabili d'ambiente — NON committare mai!
+.env
+
+# Codice generato da Ettorino
+workspace/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# OS
+.DS_Store
+Thumbs.db

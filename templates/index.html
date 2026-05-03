@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AgentLoop</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Syne:wght@400;700;800&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #080c10;
+  --surface: #0d1117;
+  --surface2: #161b22;
+  --border: #21262d;
+  --claude: #a78bfa;
+  --claude-dim: #4c1d95;
+  --codex: #34d399;
+  --codex-dim: #064e3b;
+  --warn: #fbbf24;
+  --error: #f87171;
+  --text: #e6edf3;
+  --muted: #7d8590;
+  --easy: #34d399;
+  --medium: #fbbf24;
+  --hard: #f87171;
+  --cost: #60a5fa;
+}
+
+html, body { height: 100%; background: var(--bg); color: var(--text);
+  font-family: 'JetBrains Mono', monospace; font-size: 13px; line-height: 1.6; overflow: hidden; }
+
+body::before {
+  content: ''; position: fixed; inset: 0;
+  background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px);
+  pointer-events: none; z-index: 9999;
+}
+
+.layout { display: grid; grid-template-columns: 360px 1fr; height: 100vh; }
+
+/* ── LEFT ── */
+.left { display: flex; flex-direction: column; border-right: 1px solid var(--border); background: var(--surface); overflow-y: auto; }
+
+.logo { padding: 20px 20px 14px; border-bottom: 1px solid var(--border); }
+.logo h1 { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 20px; letter-spacing: -0.5px; }
+.logo h1 .br { color: var(--claude); }
+.logo p { color: var(--muted); font-size: 10px; margin-top: 3px; }
+
+/* agents */
+.agents { padding: 12px 20px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; }
+.agent-row { display: flex; align-items: center; gap: 8px; }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--border); flex-shrink: 0; transition: all 0.3s; }
+.dot.claude.active { background: var(--claude); box-shadow: 0 0 8px var(--claude); animation: pulse 1.5s infinite; }
+.dot.codex.active  { background: var(--codex);  box-shadow: 0 0 8px var(--codex);  animation: pulse 1.5s infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.5} }
+.agent-name { font-size: 11px; flex: 1; }
+.agent-name .sub { color: var(--muted); font-weight: 300; }
+.phase-tag { font-size: 9px; color: var(--muted); padding: 1px 5px; border: 1px solid var(--border); border-radius: 3px; opacity: 0; transition: opacity .3s; }
+.phase-tag.show { opacity: 1; }
+
+/* classification card */
+.class-card { margin: 12px 20px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; display: none; }
+.class-card.show { display: block; animation: fadeIn .4s ease; }
+.class-header { padding: 8px 12px; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; font-weight: 600; display: flex; align-items: center; justify-content: space-between; }
+.class-header.easy   { background: rgba(52,211,153,.08); color: var(--easy); border-bottom: 1px solid rgba(52,211,153,.2); }
+.class-header.medium { background: rgba(251,191,36,.08); color: var(--medium); border-bottom: 1px solid rgba(251,191,36,.2); }
+.class-header.hard   { background: rgba(248,113,113,.08); color: var(--hard); border-bottom: 1px solid rgba(248,113,113,.2); }
+.class-body { padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.class-row { display: flex; justify-content: space-between; align-items: center; font-size: 11px; }
+.class-row .label { color: var(--muted); }
+.class-row .val { font-weight: 500; }
+.model-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.model-chip { background: var(--surface2); border: 1px solid var(--border); border-radius: 5px; padding: 5px 8px; font-size: 10px; }
+.model-chip .role { color: var(--muted); font-size: 9px; text-transform: uppercase; letter-spacing: .5px; }
+.model-chip .name { color: var(--text); margin-top: 1px; font-weight: 500; }
+.factors { display: flex; flex-wrap: wrap; gap: 4px; }
+.factor-tag { font-size: 9px; padding: 2px 6px; background: var(--surface2); border: 1px solid var(--border); border-radius: 3px; color: var(--muted); }
+
+/* cost panel */
+.cost-panel { margin: 0 20px 12px; border: 1px solid rgba(96,165,250,.2); border-radius: 8px; overflow: hidden; }
+.cost-header { padding: 7px 12px; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--cost); background: rgba(96,165,250,.05); border-bottom: 1px solid rgba(96,165,250,.15); display: flex; justify-content: space-between; }
+.cost-total { font-family: 'Syne', sans-serif; font-size: 18px; font-weight: 800; color: var(--cost); padding: 8px 12px 4px; }
+.cost-total .currency { font-size: 11px; font-weight: 400; color: var(--muted); vertical-align: top; margin-top: 3px; display: inline-block; }
+.cost-total .estimate { font-size: 10px; color: var(--muted); font-family: 'JetBrains Mono', monospace; font-weight: 300; display: block; margin-top: 2px; }
+.cost-calls { padding: 0 12px 10px; display: flex; flex-direction: column; gap: 3px; max-height: 120px; overflow-y: auto; }
+.cost-call { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); padding: 2px 0; border-bottom: 1px solid rgba(33,38,45,.5); }
+.cost-call .call-model { color: var(--text); }
+.cost-call .call-cost { color: var(--cost); }
+
+/* input area */
+.input-area { flex: 1; padding: 14px 20px; display: flex; flex-direction: column; gap: 10px; min-height: 180px; }
+.input-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+textarea#task { flex: 1; background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-family: 'JetBrains Mono', monospace; font-size: 12px; line-height: 1.7; padding: 12px; resize: none; outline: none; transition: border-color .2s; min-height: 100px; }
+textarea#task:focus { border-color: var(--claude); }
+textarea#task::placeholder { color: var(--muted); }
+.btn-start { display: flex; align-items: center; justify-content: center; gap: 7px; background: var(--claude); color: #0d0a1a; border: none; border-radius: 6px; padding: 11px; font-family: 'Syne', sans-serif; font-weight: 700; font-size: 12px; cursor: pointer; transition: all .2s; }
+.btn-start:hover { background: #c4b5fd; transform: translateY(-1px); }
+.btn-start:disabled { opacity: .4; cursor: not-allowed; transform: none; }
+
+/* stats bar */
+.stats { display: grid; grid-template-columns: 1fr 1fr 1fr; border-top: 1px solid var(--border); }
+.stat { padding: 10px 14px; text-align: center; border-right: 1px solid var(--border); }
+.stat:last-child { border-right: none; }
+.stat-val { font-family: 'Syne', sans-serif; font-size: 16px; font-weight: 800; }
+.stat-label { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: .8px; margin-top: 1px; }
+
+/* ── RIGHT ── */
+.right { display: flex; flex-direction: column; overflow: hidden; }
+.feed-header { padding: 12px 20px; border-bottom: 1px solid var(--border); background: var(--surface); display: flex; align-items: center; gap: 10px; }
+.feed-title { font-family: 'Syne', sans-serif; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 2px; color: var(--muted); }
+.live { display: flex; align-items: center; gap: 5px; font-size: 10px; color: var(--codex); opacity: 0; transition: opacity .3s; }
+.live.show { opacity: 1; }
+.live::before { content:''; width:6px; height:6px; border-radius:50%; background:var(--codex); animation: pulse 1s infinite; }
+
+.feed { flex: 1; overflow-y: auto; padding: 16px 20px; display: flex; flex-direction: column; scroll-behavior: smooth; }
+.feed::-webkit-scrollbar { width: 3px; }
+.feed::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+@keyframes fadeIn { from{opacity:0;transform:translateY(4px)} to{opacity:1;transform:translateY(0)} }
+
+.ev { display: flex; gap: 12px; padding: 8px 0; border-bottom: 1px solid rgba(33,38,45,.4); animation: fadeIn .25s ease; }
+.ev-time { color: var(--muted); font-size: 10px; white-space: nowrap; padding-top: 1px; min-width: 52px; opacity: .6; }
+.ev-icon { width: 18px; text-align: center; flex-shrink: 0; }
+.ev-body { flex: 1; min-width: 0; }
+.ev-title { font-size: 11px; font-weight: 500; margin-bottom: 3px; }
+.ev-content { color: var(--muted); font-size: 11px; word-break: break-word; }
+
+.stream-box { background: var(--surface2); border: 1px solid var(--border); border-radius: 5px; padding: 10px 12px; font-size: 11px; line-height: 1.7; max-height: 260px; overflow-y: auto; white-space: pre-wrap; word-break: break-word; margin-top: 5px; }
+.stream-box.claude { border-left: 2px solid var(--claude); }
+.stream-box.codex  { border-left: 2px solid var(--codex); }
+
+.badge { display: inline-block; padding: 2px 7px; border-radius: 3px; font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: .8px; margin-top: 4px; }
+.badge.implement { background: rgba(167,139,250,.12); color: var(--claude); border: 1px solid var(--claude-dim); }
+.badge.fix    { background: rgba(251,191,36,.1); color: var(--warn); border: 1px solid rgba(251,191,36,.3); }
+.badge.ask    { background: rgba(251,191,36,.1); color: var(--warn); border: 1px solid rgba(251,191,36,.3); }
+.badge.done   { background: rgba(52,211,153,.1); color: var(--easy); border: 1px solid rgba(52,211,153,.3); }
+.badge.error  { background: rgba(248,113,113,.1); color: var(--error); border: 1px solid rgba(248,113,113,.3); }
+
+.iter-sep { display: flex; align-items: center; gap: 10px; margin: 10px 0; color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: 1px; }
+.iter-sep::before,.iter-sep::after { content:''; flex:1; height:1px; background:var(--border); }
+
+/* cost event */
+.cost-ev { background: rgba(96,165,250,.04); border: 1px solid rgba(96,165,250,.15); border-radius: 5px; padding: 7px 10px; margin-top: 4px; font-size: 10px; display: grid; grid-template-columns: 1fr auto; gap: 3px; }
+.cost-ev .cev-model { color: var(--text); font-weight: 500; }
+.cost-ev .cev-tokens { color: var(--muted); }
+.cost-ev .cev-cost { color: var(--cost); font-weight: 700; text-align: right; }
+.cost-ev .cev-total { color: var(--muted); font-size: 9px; text-align: right; }
+
+/* classification event */
+.cl-card { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; margin-top: 5px; display: flex; flex-direction: column; gap: 6px; font-size: 11px; }
+.cl-tier { font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 800; }
+.cl-tier.easy   { color: var(--easy); }
+.cl-tier.medium { color: var(--medium); }
+.cl-tier.hard   { color: var(--hard); }
+.cl-models { display: flex; gap: 6px; flex-wrap: wrap; }
+.cl-model-chip { font-size: 10px; padding: 3px 8px; border-radius: 4px; background: var(--surface); border: 1px solid var(--border); }
+.cl-cost-est { color: var(--cost); }
+.cl-reason { color: var(--muted); font-size: 10px; line-height: 1.5; }
+.cl-conf { display: flex; align-items: center; gap: 6px; }
+.cl-conf-bar { flex: 1; height: 3px; background: var(--border); border-radius: 2px; overflow: hidden; }
+.cl-conf-fill { height: 100%; background: var(--claude); border-radius: 2px; transition: width .5s ease; }
+
+/* human input */
+.human-area { border-top: 1px solid var(--border); background: var(--surface); padding: 14px 20px; display: none; flex-direction: column; gap: 8px; }
+.human-area.show { display: flex; animation: fadeIn .3s ease; }
+.human-q { font-size: 11px; color: var(--warn); padding: 8px 10px; background: rgba(251,191,36,.05); border: 1px solid rgba(251,191,36,.2); border-radius: 5px; border-left: 2px solid var(--warn); line-height: 1.5; }
+.human-row { display: flex; gap: 8px; }
+input#ans { flex:1; background: var(--surface2); border: 1px solid var(--border); border-radius: 5px; color: var(--text); font-family: 'JetBrains Mono', monospace; font-size: 12px; padding: 9px 11px; outline: none; transition: border-color .2s; }
+input#ans:focus { border-color: var(--warn); }
+.btn-ans { background: var(--warn); color: #1a1200; border: none; border-radius: 5px; padding: 9px 16px; font-family: 'Syne', sans-serif; font-weight: 700; font-size: 12px; cursor: pointer; white-space: nowrap; }
+.btn-ans:hover { background: #fcd34d; }
+
+.placeholder { color: var(--muted); font-size: 11px; padding: 30px 0; text-align: center; opacity: .4; }
+</style>
+</head>
+<body>
+<div class="layout">
+
+  <!-- ── LEFT ── -->
+  <div class="left">
+    <div class="logo">
+      <h1><span class="br">[</span>AgentLoop<span class="br">]</span></h1>
+      <p>Smart router · Claude × GPT · difficulty-aware</p>
+    </div>
+
+    <div class="agents">
+      <div class="agent-row">
+        <div class="dot claude" id="d-claude"></div>
+        <div class="agent-name">Reasoner <span class="sub" id="lbl-reasoner">—</span></div>
+        <div class="phase-tag" id="ph-claude">idle</div>
+      </div>
+      <div class="agent-row">
+        <div class="dot codex" id="d-codex"></div>
+        <div class="agent-name">Implementer <span class="sub" id="lbl-codex">—</span></div>
+        <div class="phase-tag" id="ph-codex">idle</div>
+      </div>
+    </div>
+
+    <!-- classification card -->
+    <div class="class-card" id="cl-card">
+      <div class="class-header" id="cl-header">Analisi task</div>
+      <div class="class-body">
+        <div class="class-row">
+          <span class="label">Difficoltà</span>
+          <span class="val" id="cl-diff">—</span>
+        </div>
+        <div class="class-row">
+          <span class="label">Confidenza</span>
+          <span class="val" id="cl-conf-val">—</span>
+        </div>
+        <div class="class-row">
+          <span class="label">Token stimati</span>
+          <span class="val" id="cl-tokens">—</span>
+        </div>
+        <div class="class-row">
+          <span class="label">Costo stimato</span>
+          <span class="val" id="cl-est-cost" style="color:var(--cost)">—</span>
+        </div>
+        <div class="model-pair" id="cl-models"></div>
+        <div class="factors" id="cl-factors"></div>
+      </div>
+    </div>
+
+    <!-- live cost -->
+    <div class="cost-panel">
+      <div class="cost-header">
+        <span>💰 Costi live</span>
+        <span id="cost-calls-count">0 chiamate</span>
+      </div>
+      <div class="cost-total">
+        <span class="currency">$</span><span id="cost-total-val">0.0000</span>
+        <span class="estimate" id="cost-estimate"></span>
+      </div>
+      <div class="cost-calls" id="cost-calls-list"></div>
+    </div>
+
+    <div class="input-area">
+      <div class="input-label">// descrivi il task</div>
+      <textarea id="task" placeholder="Es: Scrivi uno script Python che monitora una cartella e invia una email quando arriva un nuovo file..."></textarea>
+      <button class="btn-start" id="btn" onclick="startLoop()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+        AVVIA LOOP
+      </button>
+    </div>
+
+    <div class="stats">
+      <div class="stat"><div class="stat-val" id="s-iter">0</div><div class="stat-label">Iter</div></div>
+      <div class="stat"><div class="stat-val" id="s-calls">0</div><div class="stat-label">API calls</div></div>
+      <div class="stat"><div class="stat-val" id="s-time">0s</div><div class="stat-label">Tempo</div></div>
+    </div>
+  </div>
+
+  <!-- ── RIGHT ── -->
+  <div class="right">
+    <div class="feed-header">
+      <div class="feed-title">Live Feed</div>
+      <div class="live" id="live-badge">LIVE</div>
+    </div>
+
+    <div class="feed" id="feed">
+      <div class="placeholder">In attesa di un task...</div>
+    </div>
+
+    <div class="human-area" id="human-area">
+      <div class="human-q" id="human-q"></div>
+      <div class="human-row">
+        <input type="text" id="ans" placeholder="La tua risposta..." onkeydown="if(event.key==='Enter') sendHuman()">
+        <button class="btn-ans" onclick="sendHuman()">INVIA →</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let sessionId = null;
+let es = null;
+let t0 = null;
+let timerInt = null;
+let callCount = 0;
+let currentClaudeBox = null;
+let currentCodexBox = null;
+
+const feed = document.getElementById('feed');
+
+function ts() {
+  return new Date().toLocaleTimeString('it-IT', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+}
+
+function addEv(icon, title, content='', extra={}) {
+  feed.querySelector('.placeholder')?.remove();
+  const el = document.createElement('div');
+  el.className = 'ev';
+  el.innerHTML = `
+    <div class="ev-time">${ts()}</div>
+    <div class="ev-icon">${icon}</div>
+    <div class="ev-body">
+      <div class="ev-title">${title}</div>
+      ${content ? `<div class="ev-content">${content}</div>` : ''}
+      ${extra.badge ? `<span class="badge ${extra.badge}">${extra.badge}</span>` : ''}
+    </div>`;
+  feed.appendChild(el);
+  feed.scrollTop = feed.scrollHeight;
+  return el;
+}
+
+function addStreamBox(cls) {
+  const box = document.createElement('div');
+  box.className = `stream-box ${cls}`;
+  feed.appendChild(box);
+  feed.scrollTop = feed.scrollHeight;
+  return box;
+}
+
+function setAgent(agent, active, phase='', model='') {
+  const dot = document.getElementById(`d-${agent}`);
+  const ph  = document.getElementById(`ph-${agent}`);
+  if (active) {
+    dot.classList.add('active');
+    ph.textContent = phase;
+    ph.classList.add('show');
+  } else {
+    dot.classList.remove('active');
+    ph.classList.remove('show');
+  }
+}
+
+function updateCostPanel(d) {
+  const total = d.total_cost || 0;
+  document.getElementById('cost-total-val').textContent = total.toFixed(4);
+  
+  callCount++;
+  document.getElementById('s-calls').textContent = callCount;
+  document.getElementById('cost-calls-count').textContent = `${callCount} chiamate`;
+
+  const list = document.getElementById('cost-calls-list');
+  const row = document.createElement('div');
+  row.className = 'cost-call';
+  row.innerHTML = `
+    <span class="call-model">${d.model_label}</span>
+    <span>${d.input_tokens}↑ ${d.output_tokens}↓</span>
+    <span class="call-cost">$${(d.call_cost||0).toFixed(4)}</span>`;
+  list.appendChild(row);
+  list.scrollTop = list.scrollHeight;
+}
+
+function showClassification(d) {
+  const card = document.getElementById('cl-card');
+  card.classList.add('show');
+  const h = document.getElementById('cl-header');
+  h.className = `class-header ${d.difficulty}`;
+  h.textContent = d.tier_label;
+
+  document.getElementById('cl-diff').textContent = `${d.difficulty} (${Math.round(d.confidence*100)}%)`;
+  document.getElementById('cl-conf-val').textContent = `${Math.round(d.confidence*100)}%`;
+  document.getElementById('cl-tokens').textContent = `~${d.estimated_input_tokens} in / ~${d.estimated_output_tokens} out`;
+  document.getElementById('cl-est-cost').textContent = `~$${d.estimated_cost.toFixed(4)}`;
+
+  document.getElementById('lbl-reasoner').textContent = `· ${d.reasoner_label}`;
+  document.getElementById('lbl-codex').textContent = `· ${d.implementer_label}`;
+
+  document.getElementById('cl-models').innerHTML = `
+    <div class="model-chip"><div class="role">Reasoner</div><div class="name">${d.reasoner_label}</div></div>
+    <div class="model-chip"><div class="role">Implementer</div><div class="name">${d.implementer_label}</div></div>`;
+
+  const factors = document.getElementById('cl-factors');
+  factors.innerHTML = (d.complexity_factors||[]).map(f => `<span class="factor-tag">${f}</span>`).join('');
+
+  document.getElementById('cost-estimate').textContent = `stima: ~$${d.estimated_cost.toFixed(4)}`;
+
+  // Feed event
+  const ev = addEv('🔍', 'Task classificato', '');
+  const body = ev.querySelector('.ev-body');
+  const card2 = document.createElement('div');
+  card2.className = 'cl-card';
+  card2.innerHTML = `
+    <span class="cl-tier ${d.difficulty}">${d.tier_label}</span>
+    <span class="cl-reason">${d.reasoning}</span>
+    <div class="cl-conf">
+      <span style="font-size:9px;color:var(--muted)">Confidenza</span>
+      <div class="cl-conf-bar"><div class="cl-conf-fill" style="width:${d.confidence*100}%"></div></div>
+      <span style="font-size:9px">${Math.round(d.confidence*100)}%</span>
+    </div>
+    <div class="cl-models">
+      <span class="cl-model-chip">🧠 ${d.reasoner_label}</span>
+      <span class="cl-model-chip">⚡ ${d.implementer_label}</span>
+    </div>
+    <span class="cl-cost-est">Costo stimato: ~$${d.estimated_cost.toFixed(4)} (${d.avg_iterations} iterazioni)</span>`;
+  body.appendChild(card2);
+  feed.scrollTop = feed.scrollHeight;
+}
+
+async function startLoop() {
+  const task = document.getElementById('task').value.trim();
+  if (!task) return;
+
+  // reset
+  feed.innerHTML = '<div class="placeholder" style="display:none"></div>';
+  document.getElementById('btn').disabled = true;
+  document.getElementById('live-badge').classList.add('show');
+  document.getElementById('cl-card').classList.remove('show');
+  document.getElementById('cost-calls-list').innerHTML = '';
+  document.getElementById('cost-total-val').textContent = '0.0000';
+  document.getElementById('cost-estimate').textContent = '';
+  document.getElementById('cost-calls-count').textContent = '0 chiamate';
+  callCount = 0;
+  document.getElementById('s-iter').textContent = '0';
+  document.getElementById('s-calls').textContent = '0';
+  t0 = Date.now();
+  timerInt = setInterval(() => {
+    const s = Math.floor((Date.now()-t0)/1000);
+    document.getElementById('s-time').textContent = s<60 ? `${s}s` : `${Math.floor(s/60)}m${s%60}s`;
+  }, 1000);
+
+  if (es) es.close();
+
+  const res = await fetch('/start', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({task})
+  });
+  const data = await res.json();
+  sessionId = data.session_id;
+
+  es = new EventSource(`/stream/${sessionId}`);
+
+  es.onmessage = (e) => {
+    const ev = JSON.parse(e.data);
+    const t = ev.type;
+    const d = ev.data || {};
+
+    if (t === 'ping') return;
+
+    if (t === 'loop_start') {
+      feed.innerHTML = '';
+      addEv('🚀', 'Loop avviato', `<em>${d.task.substring(0,80)}${d.task.length>80?'...':''}</em>`);
+    }
+
+    else if (t === 'classifying') {
+      addEv('🔍', d.message, '');
+    }
+
+    else if (t === 'classification_result') {
+      showClassification(d);
+    }
+
+    else if (t === 'cost_update') {
+      updateCostPanel(d);
+    }
+
+    else if (t === 'iteration') {
+      const sep = document.createElement('div');
+      sep.className = 'iter-sep';
+      sep.textContent = `iterazione ${d.n}`;
+      feed.appendChild(sep);
+      document.getElementById('s-iter').textContent = d.n;
+    }
+
+    else if (t === 'agent_start') {
+      if (d.agent === 'claude') {
+        setAgent('claude', true, d.phase, d.model);
+        setAgent('codex', false);
+        addEv('🧠', `${d.model} sta ragionando...`, '');
+        currentClaudeBox = addStreamBox('claude');
+      } else {
+        setAgent('codex', true, d.phase, d.model);
+        setAgent('claude', false);
+        addEv('⚡', `${d.model} sta implementando...`, '');
+        currentCodexBox = addStreamBox('codex');
+      }
+    }
+
+    else if (t === 'claude_chunk' && currentClaudeBox) {
+      currentClaudeBox.textContent += d.text;
+      feed.scrollTop = feed.scrollHeight;
+    }
+
+    else if (t === 'codex_chunk' && currentCodexBox) {
+      currentCodexBox.textContent += d.text;
+      feed.scrollTop = feed.scrollHeight;
+    }
+
+    else if (t === 'agent_end') {
+      setAgent(d.agent, false);
+      if (d.agent === 'claude') currentClaudeBox = null;
+      else currentCodexBox = null;
+    }
+
+    else if (t === 'claude_result') {
+      const icons = {implement:'📋', fix:'🔧', ask:'❓', done:'✅'};
+      const labels = {implement:'Spec pronte', fix:'Fix richiesto', ask:'Domanda', done:'Completato!'};
+      addEv(icons[d.status]||'•', labels[d.status]||d.status, '', {badge: d.status});
+    }
+
+    else if (t === 'spec_ready') {
+      addEv('📄', 'Spec inviate all\'implementer', d.spec.substring(0,100)+'...');
+    }
+
+    else if (t === 'file_saved') {
+      addEv('💾', 'File salvato', d.path);
+    }
+
+    else if (t === 'fix_needed') {
+      addEv('🔧', 'Feedback per l\'implementer', d.feedback.substring(0,120)+'...');
+    }
+
+    else if (t === 'waiting_human') {
+      document.getElementById('human-q').textContent = '❓ ' + d.question;
+      document.getElementById('human-area').classList.add('show');
+      document.getElementById('ans').focus();
+    }
+
+    else if (t === 'human_response') {
+      document.getElementById('human-area').classList.remove('show');
+      addEv('👤', 'Risposta utente', d.text);
+    }
+
+    else if (t === 'loop_end') {
+      clearInterval(timerInt);
+      document.getElementById('live-badge').classList.remove('show');
+      document.getElementById('btn').disabled = false;
+      setAgent('claude', false); setAgent('codex', false);
+
+      const costLine = d.total_cost ? ` · costo totale: <span style="color:var(--cost)">$${d.total_cost.toFixed(4)}</span>` : '';
+      if (d.success) {
+        addEv('🎉', `Completato in ${d.iterations} iterazioni${costLine}`, d.summary||'');
+      } else {
+        addEv('⚠️', `Terminato: ${d.message}${costLine}`, '');
+      }
+    }
+
+    else if (t === 'error') {
+      clearInterval(timerInt);
+      document.getElementById('btn').disabled = false;
+      addEv('❌', 'Errore', d.message, {badge:'error'});
+    }
+
+    else if (t === 'timeout') {
+      addEv('⏱️', 'Timeout — nessuna risposta', '');
+    }
+  };
+
+  es.onerror = () => {
+    document.getElementById('live-badge').classList.remove('show');
+    document.getElementById('btn').disabled = false;
+    clearInterval(timerInt);
+  };
+}
+
+async function sendHuman() {
+  const answer = document.getElementById('ans').value.trim();
+  if (!answer || !sessionId) return;
+  document.getElementById('ans').value = '';
+  await fetch(`/respond/${sessionId}`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({response: answer})
+  });
+}
+</script>
+</body>
+</html>
