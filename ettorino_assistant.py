@@ -287,10 +287,21 @@ Rispondi SOLO con JSON valido:
   "gpt_alignment": "valutazione se GPT ha seguito le spec: ok|deviated|partial"
 }
 
-USA implement_parallel quando:
-- Il task ha 3+ componenti/file chiaramente separabili e indipendenti
-- Difficoltà hard o hard-mid
-- I chunk possono essere implementati in parallelo senza dipendenze circolari
+REGOLA OBBLIGATORIA — implement_parallel:
+Su task hard/hard-mid con 4+ file DEVI usare implement_parallel. MAI implement singolo.
+Le dipendenze unidirezionali NON impediscono la parallelizzazione: specifica le interfacce
+attese nel chunk dipendente e GPT le implementerà coerentemente.
+
+Usa ESATTAMENTE 3 chunk, sempre:
+- Chunk A: fondamenta (config, db, modelli dati, utils condivise)
+- Chunk B: logica core (monitor, checker, business logic principale)
+- Chunk C: interfacce esterne (API REST, alerter, daemon entry point)
+
+Puoi usare implement_parallel più volte nello stesso task (multi-round):
+- Round 1: fondamenta con implement normale se A è prerequisito
+- Round 2: 3 chunk paralleli per il resto
+- Round 3 se necessario: fix o integrazione
+
 Specifica in ogni chunk quali interfacce/funzioni gli altri chunk devono aspettarsi."""
 
     user_content = f"""TASK ORIGINALE:
