@@ -101,6 +101,7 @@ session_costs  = {}
 human_responses = {}
 model_overrides = {}  # session_id → {"reasoner": ..., "implementer": ...}
 session_state  = {}  # session_id → {"code": str, "task": str, "reasoner": str, "implementer": str, "iteration": int}
+stop_flags     = {}  # session_id → bool — set True to abort loop
 
 # ─────────────────────────────────────────────
 # HELPERS
@@ -152,7 +153,10 @@ def wait_for_human(session_id: str, timeout: int = 300) -> str | None:
     deadline = time.time() + timeout
     while time.time() < deadline:
         if session_id in human_responses:
-            return human_responses.pop(session_id)
+            val = human_responses.pop(session_id)
+            if val == "__stop__":
+                return None  # treat as timeout/abort
+            return val
         time.sleep(0.3)
     return None
 
@@ -366,8 +370,25 @@ def gpt_implement(client: openai.OpenAI, session_id: str, task: str, spec: str,
 4. Scrivere codice pulito, commentato, immediatamente eseguibile
 5. Se le spec sono ambigue, implementa la versione più ragionevole e documentala
 
-Rispondi SOLO con codice Python puro, nessuna spiegazione fuori dal codice.
-Usa commenti inline per spiegare le scelte non ovvie."""
+FORMATO OUTPUT — OBBLIGATORIO:
+Se il progetto ha più file, usa SEMPRE questo formato per separare i file:
+
+### FILE: percorso/relativo/file.py
+(codice completo del file)
+
+### FILE: altro/file.py
+(codice completo)
+
+Esempio:
+### FILE: webmon/__init__.py
+__version__ = "1.0.0"
+
+### FILE: webmon/config.py
+import yaml
+...
+
+Se il progetto è un singolo file, scrivi solo il codice Python puro senza intestazione FILE.
+Ogni file deve essere COMPLETO e funzionante. Non troncare mai il codice."""
 
     prompt = f"SPECIFICHE DA IMPLEMENTARE:\n{spec}"
     if feedback:
@@ -421,16 +442,44 @@ Usa commenti inline per spiegare le scelte non ovvie."""
     })
     emit(q, "agent_end", {"agent": "gpt"})
 
-    # Salva file — nome corto contestuale, non sovrascrive
+    # ── Salva output di GPT ──────────────────────────────────────────────────
     import re as _re, time as _t
+
+    # Cartella del progetto: prime 3 parole del task come slug
     words = _re.findall(r"[a-zA-Z]+", task)[:3]
-    slug = "_".join(w.lower() for w in words) or "task"
-    path = WORKSPACE / f"{slug}_v{iteration}.py"
-    if path.exists():
-        path = WORKSPACE / f"{slug}_v{iteration}_{int(_t.time()) % 9999}.py"
-    path.write_text(full_code, encoding="utf-8")
-    filename = path
-    emit(q, "file_saved", {"path": str(filename), "iteration": iteration})
+    slug  = "_".join(w.lower() for w in words) or "task"
+    proj_dir = WORKSPACE / slug
+    proj_dir.mkdir(parents=True, exist_ok=True)
+
+    # Prova a estrarre blocchi ### FILE: path/to/file.ext ... (codice) dalla risposta
+    file_blocks = _re.findall(
+        r"###\s*FILE\s*(?:\d+\s*)?[:\-]?\s*([\w./\-]+\.\w+)\s*\n([\s\S]*?)(?=###\s*FILE|$)",
+        full_code
+    )
+
+    saved_paths = []
+    if file_blocks:
+        # GPT ha prodotto output multi-file strutturato
+        for rel_path, content in file_blocks:
+            rel_path = rel_path.strip().lstrip("/")
+            dest = proj_dir / rel_path
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_text(content.strip(), encoding="utf-8")
+            saved_paths.append(str(dest))
+    else:
+        # Output singolo file — salva come v{N}.py nella cartella progetto
+        dest = proj_dir / f"v{iteration}.py"
+        if dest.exists():
+            dest = proj_dir / f"v{iteration}_{int(_t.time()) % 9999}.py"
+        dest.write_text(full_code, encoding="utf-8")
+        saved_paths.append(str(dest))
+
+    emit(q, "file_saved", {
+        "path":       str(proj_dir),
+        "files":      saved_paths,
+        "multi_file": len(saved_paths) > 1,
+        "iteration":  iteration,
+    })
 
     return full_code
 
@@ -539,6 +588,14 @@ def run_agent_loop(session_id: str, task: str, q: queue.Queue):
     while iteration < max_iterations:
         iteration += 1
         emit(q, "iteration_start", {"n": iteration, "max": max_iterations})
+
+        # Check if user requested stop
+        if stop_flags.get(session_id):
+            stop_flags.pop(session_id, None)
+            emit(q, "loop_end", {"success": False, "summary": "Interrotto dall'utente.",
+                                  "iterations": iteration, "total_cost": session_costs.get(session_id, {}).get("total", 0),
+                                  "by_model": session_costs.get(session_id, {}).get("by_model", {})})
+            return
 
         # Claude ragiona
         result = claude_reason(claude_client, session_id, task, context,
@@ -719,6 +776,14 @@ def continue_agent_loop(session_id: str, followup: str, q: queue.Queue):
         iteration += 1
         emit(q, "iteration_start", {"n": iteration, "max": start_iter + max_iterations})
 
+        # Check if user requested stop
+        if stop_flags.get(session_id):
+            stop_flags.pop(session_id, None)
+            emit(q, "loop_end", {"success": False, "summary": "Interrotto dall'utente.",
+                                  "iterations": iteration, "total_cost": session_costs.get(session_id, {}).get("total", 0),
+                                  "by_model": session_costs.get(session_id, {}).get("by_model", {})})
+            return
+
         result = claude_reason(claude_client, session_id, combined_task, context,
                                reasoner_model, iteration, q)
         status = result.get("status", "ask")
@@ -844,6 +909,13 @@ def continue_run():
     thread.start()
 
     return jsonify({"session_id": session_id})
+
+@app.route("/stop/<session_id>", methods=["POST"])
+def stop(session_id):
+    stop_flags[session_id] = True
+    # also push a sentinel to unblock any wait_for_human
+    human_responses[session_id] = "__stop__"
+    return jsonify({"ok": True})
 
 @app.route("/models")
 def models():

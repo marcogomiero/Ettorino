@@ -73,6 +73,22 @@
     .new-btn{display:flex;align-items:center;gap:5px;background:transparent;color:#aaa;border:1px solid #e5e3de;border-radius:999px;padding:7px 14px;font-family:'Outfit',sans-serif;font-size:.78rem;font-weight:500;cursor:pointer;transition:all .15s}
     .new-btn:hover{border-color:#f97316;color:#f97316}
     .new-btn:active{transform:scale(.97)}
+    /* ── STOP FAB ── */
+    .stop-fab{
+      display:none;
+      position:fixed;bottom:28px;right:28px;z-index:999;
+      align-items:center;gap:7px;
+      background:#dc2626;color:#fff;
+      border:none;border-radius:999px;
+      padding:11px 20px;
+      font-family:'Outfit',sans-serif;font-size:.82rem;font-weight:600;
+      cursor:pointer;
+      box-shadow:0 4px 16px rgba(220,38,38,.35);
+      transition:background .15s,transform .1s,box-shadow .15s;
+    }
+    .stop-fab:hover{background:#b91c1c;box-shadow:0 6px 20px rgba(220,38,38,.45)}
+    .stop-fab:active{transform:scale(.96)}
+    .stop-fab.visible{display:flex}
 
     /* ── LIVE SECTION ── */
     .live-section{max-width:600px;margin:0 auto;padding:0 1rem 3rem}
@@ -200,7 +216,7 @@
         <button class="new-btn" id="newBtn" onclick="newTask()" style="display:none">
           ↺ Nuovo task
         </button>
-        <button class="run-btn" id="runBtn" onclick="startRun()">
+<button class="run-btn" id="runBtn" onclick="startRun()">
           <svg viewBox="0 0 16 16" style="width:12px;height:12px;fill:white"><polygon points="4,2 14,8 4,14"/></svg>
           Avvia
         </button>
@@ -316,52 +332,83 @@ function scrollFeed(){
 }
 
 // ── Streaming bubble ───────────────────────
-let currentStreamBody = null;
-let currentStreamText = '';
+var currentStreamBody = null;
+var currentStreamText = '';
+var currentStreamAgent = null;
 
 function startStreamBubble(agentKey, modelLabel){
-  const {body} = createMsg(agentKey);
+  var parts = createMsg(agentKey);
+  var body = parts.body;
   body.innerHTML = '<div class="typing"><span></span><span></span><span></span></div>';
   if(modelLabel){
-    const ml = document.createElement('div');
-    ml.style.cssText = 'font-size:.63rem;color:#aaa;font-family:\'DM Mono\',monospace;margin-bottom:3px';
+    var ml = document.createElement('div');
+    ml.style.fontSize = '.63rem';
+    ml.style.color = '#aaa';
+    ml.style.fontFamily = 'DM Mono, monospace';
+    ml.style.marginBottom = '3px';
     ml.textContent = modelLabel;
     body.parentNode.insertBefore(ml, body);
   }
   currentStreamBody = body;
   currentStreamText = '';
+  currentStreamAgent = agentKey;
   return body;
 }
 
-function renderMarkdown(text){
-  // Only render complete code blocks — don't break on partial ```
-  let out = text;
-  // complete fenced code blocks
-  out = out.replace(/```[\w]*\n([\s\S]*?)```/g, (_, code) =>
-    '<pre>' + code.replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</pre>'
-  );
-  // inline code — only if balanced
-  out = out.replace(/`([^`\n]+)`/g, '<code>$1</code>');
-  // bold **text**
-  out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-  // newlines → <br> (but not inside pre)
-  out = out.replace(/\n/g, '<br>');
-  // hide raw JSON blobs — if line starts with { replace with nothing visible
-  out = out.replace(/<br>\s*\{[^<]{0,2000}\}<br>/gs, '<br>');
-  return out;
+function escHtml(s){
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function renderText(raw){
+  // replace escaped newlines from JSON strings
+  var t = raw.replace(/\\n/g,'\n').replace(/\\t/g,'  ').replace(/\\"/g,'"');
+  // fenced code blocks (complete only)
+  t = t.replace(/```[\w]*\n([\s\S]*?)```/g, function(_,code){
+    return '<pre>' + escHtml(code.trimRight()) + '</pre>';
+  });
+  // inline code
+  t = t.replace(/`([^`\n]{1,200})`/g, '<code>$1</code>');
+  // bold
+  t = t.replace(/\*\*([^*\n]{1,200})\*\*/g, '<strong>$1</strong>');
+  // newlines to br
+  t = t.replace(/\n/g, '<br>');
+  return t;
+}
+
+function extractThoughts(raw){
+  // Pull "thoughts" value out of partial Claude JSON stream
+  var m = raw.match(/"thoughts"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+  if(m && m[1].length > 8){
+    return m[1].replace(/\\n/g,'\n').replace(/\\"/g,'"');
+  }
+  // partial match — thoughts field not closed yet
+  var pm = raw.match(/"thoughts"\s*:\s*"((?:[^"\\]|\\.){10,})/);
+  if(pm){ return pm[1].replace(/\\n/g,'\n').replace(/\\"/g,'"'); }
+  return null;
 }
 
 function appendStream(text){
   if(!currentStreamBody) return;
   currentStreamText += text;
-  const rendered = renderMarkdown(currentStreamText);
-  currentStreamBody.innerHTML = rendered || '<div class="typing"><span></span><span></span><span></span></div>';
+  var html;
+  if(currentStreamAgent === 'claude'){
+    var thoughts = extractThoughts(currentStreamText);
+    if(thoughts && thoughts.length > 10){
+      html = renderText(thoughts);
+    } else {
+      html = null;
+    }
+  } else {
+    html = renderText(currentStreamText);
+  }
+  currentStreamBody.innerHTML = html || '<div class="typing"><span></span><span></span><span></span></div>';
   scrollFeed();
 }
 
 function endStream(){
   currentStreamBody = null;
   currentStreamText = '';
+  currentStreamAgent = null;
 }
 
 // ── Confirm card ───────────────────────────
@@ -376,35 +423,31 @@ function showConfirmCard(d){
 
   const card = document.createElement('div');
   card.className = 'confirm-card';
-  card.innerHTML = `
-    <div class="confirm-title">⚡ Pronto · conferma i modelli</div>
-    <div class="confirm-row">
-      <span class="confirm-label">Difficoltà</span>
-      <span class="difficulty-pill ${d.difficulty}">${d.difficulty.toUpperCase()}</span>
-    </div>
-    <div class="rationale">${d.reasoning || ''}</div>
-    <div class="confirm-row" style="margin-top:.4rem">
-      <span class="confirm-label">Stima costo</span>
-      <span class="cost-estimate">~${fmt(d.estimated_cost)}</span>
-    </div>
-    <div style="font-size:.7rem;color:#aaa;margin:.6rem 0 .3rem;font-family:'DM Mono',monospace">MODELLI SELEZIONATI — puoi cambiarli:</div>
-    <div class="model-selects">
-      <select id="selReasoner">
-        ${d.available_reasoners.map(m =>
-          `<option value="${m.id}" ${m.id===d.reasoner_model?'selected':''}>${m.label} [${m.tier}]</option>`
-        ).join('')}
-      </select>
-      <select id="selImplementer">
-        ${d.available_implementers.map(m =>
-          `<option value="${m.id}" ${m.id===d.implementer_model?'selected':''}>${m.label} [${m.tier}]</option>`
-        ).join('')}
-      </select>
-    </div>
-    ${d.model_rationale ? `<div class="rationale" style="border-color:#a7f3d0">${d.model_rationale}</div>` : ''}
-    <div class="confirm-actions">
-      <button class="btn-confirm" onclick="confirmModels(false)">▶ Avvia con questi modelli</button>
-      <button class="btn-change"  onclick="confirmModels(true)">Cambia e avvia</button>
-    </div>`;
+  var _reasonerOpts = d.available_reasoners.map(function(m){
+    return '<option value="' + m.id + '" ' + (m.id===d.reasoner_model?'selected':'') + '>' + m.label + ' [' + m.tier + ']</option>';
+  }).join('');
+  var _implOpts = d.available_implementers.map(function(m){
+    return '<option value="' + m.id + '" ' + (m.id===d.implementer_model?'selected':'') + '>' + m.label + ' [' + m.tier + ']</option>';
+  }).join('');
+  var _rationale = d.model_rationale
+    ? '<div class="rationale" style="border-color:#a7f3d0">' + d.model_rationale + '</div>'
+    : '';
+  card.innerHTML =
+    '<div class="confirm-title">⚡ Pronto · conferma i modelli</div>' +
+    '<div class="confirm-row"><span class="confirm-label">Difficoltà</span>' +
+    '<span class="difficulty-pill ' + d.difficulty + '">' + d.difficulty.toUpperCase() + '</span></div>' +
+    '<div class="rationale">' + (d.reasoning || '') + '</div>' +
+    '<div class="confirm-row" style="margin-top:.4rem"><span class="confirm-label">Stima costo</span>' +
+    '<span class="cost-estimate">~' + fmt(d.estimated_cost) + '</span></div>' +
+    '<div style="font-size:.7rem;color:#aaa;margin:.6rem 0 .3rem;font-family:DM Mono,monospace">MODELLI SELEZIONATI — puoi cambiarli:</div>' +
+    '<div class="model-selects">' +
+    '<select id="selReasoner">' + _reasonerOpts + '</select>' +
+    '<select id="selImplementer">' + _implOpts + '</select>' +
+    '</div>' + _rationale +
+    '<div class="confirm-actions">' +
+    '<button class="btn-confirm" onclick="confirmModels(false)">▶ Avvia con questi modelli</button>' +
+    '<button class="btn-change" onclick="confirmModels(true)">Cambia e avvia</button>' +
+    '</div>';
 
   wrapper.appendChild(av);
   wrapper.appendChild(card);
@@ -419,7 +462,7 @@ function confirmModels(change){
   let payload;
   if(change){
     payload = JSON.stringify({action:'change', reasoner, implementer});
-    addSimpleMsg('system', `Modelli aggiornati → <strong>${reasoner}</strong> + <strong>${implementer}</strong>`);
+    addSimpleMsg('system', 'Modelli aggiornati → <strong>' + reasoner + '</strong> + <strong>' + implementer + '</strong>');
   } else {
     payload = JSON.stringify({action:'confirm'});
   }
@@ -427,7 +470,7 @@ function confirmModels(change){
   // disabilita i bottoni
   document.querySelectorAll('.btn-confirm,.btn-change,.model-selects select').forEach(el => el.disabled = true);
 
-  fetch(`/respond/${sessionId}`, {
+  fetch('/respond/' + sessionId, {
     method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({response: payload})
   });
@@ -446,12 +489,10 @@ function showAnswerBox(question){
 
   const box = document.createElement('div');
   box.className = 'answer-box';
-  box.innerHTML = `
-    <div class="answer-question">❓ ${question}</div>
-    <div class="answer-row">
-      <input class="answer-input" id="ansInput" placeholder="La tua risposta..." onkeydown="if(event.key==='Enter')sendAnswer()"/>
-      <button class="answer-btn" onclick="sendAnswer()">Invia</button>
-    </div>`;
+  box.innerHTML = '<div class="answer-question">❓ ' + question + '</div>' +
+    '<div class="answer-row">' +
+    '<input class="answer-input" id="ansInput" placeholder="La tua risposta..." onkeydown="if(event.key===\'Enter\')sendAnswer()"/>' +
+    '<button class="answer-btn" onclick="sendAnswer()">Invia</button></div>';
 
   wrapper.appendChild(av);
   wrapper.appendChild(box);
@@ -467,10 +508,28 @@ function sendAnswer(){
   addSimpleMsg('user', val);
   // rimuovi la answer box
   document.getElementById('answerBox')?.remove();
-  fetch(`/respond/${sessionId}`,{
+  fetch('/respond/' + sessionId, {
     method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({response: val})
   });
+}
+
+// ── Stop current run ──────────────────────
+async function stopRun(){
+  if(es){ es.close(); es = null; }
+
+  // tell backend to abort (best-effort — kills the SSE stream)
+  if(sessionId){
+    try {
+      await fetch('/stop/' + sessionId, {method:'POST'});
+    } catch(e){}
+  }
+
+  setStatus('interrotto');
+  addSimpleMsg('system', '⛔ Task interrotto dall\'utente.');
+  document.getElementById('stopBtn').classList.remove('visible');
+  document.getElementById('runBtn').disabled        = false;
+  document.getElementById('newBtn').style.display   = 'flex';
 }
 
 // ── New task reset ─────────────────────────
@@ -485,6 +544,7 @@ function newTask(){
 
   // nasconde done banner e cost bar
   document.getElementById('doneBanner').classList.remove('show');
+  document.getElementById('stopBtn').classList.remove('visible');
   const cb = document.getElementById('continueBox'); if(cb) cb.style.display='block';
   const ci = document.getElementById('continueInput'); if(ci) ci.value='';
   document.getElementById('costBar').classList.remove('visible');
@@ -520,7 +580,8 @@ async function startRun(){
   updateCostBar();
   showCostBar();
   document.getElementById('runBtn').disabled = true;
-  document.getElementById('newBtn').style.display = 'flex';
+  document.getElementById('newBtn').style.display = 'none';
+  document.getElementById('stopBtn').classList.add('visible');
   setStatus('avvio...');
 
   const res = await fetch('/run',{
@@ -531,7 +592,7 @@ async function startRun(){
   sessionId = json.session_id;
 
   if(es){ es.close(); }
-  es = new EventSource(`/stream/${sessionId}`);
+  es = new EventSource('/stream/' + sessionId);
 
   es.onmessage = e => {
     const evt = JSON.parse(e.data);
@@ -540,6 +601,7 @@ async function startRun(){
 
   es.onerror = () => {
     setStatus('errore connessione');
+    document.getElementById('stopBtn').classList.remove('visible');
     document.getElementById('runBtn').disabled = false;
   };
 }
@@ -550,12 +612,12 @@ function handleEvent(type, d){
 
     case 'loop_start':
       setStatus('classifico...');
-      addSimpleMsg('system', `Task avviato: <em>${d.task}</em>`);
+      addSimpleMsg('system', 'Task avviato: <em>' + d.task + '</em>');
       break;
 
     case 'agent_start':
       if(d.agent === 'router') setStatus('router analizza...');
-      else setStatus(`${d.label} ${d.model ? '· '+d.model : ''} sta lavorando...`);
+      else setStatus((d.label || '') + (d.model ? ' · '+d.model : '') + ' sta lavorando...');
       startStreamBubble(d.agent, d.model || null);
       break;
 
@@ -587,12 +649,12 @@ function handleEvent(type, d){
       break;
 
     case 'models_updated':
-      addSimpleMsg('system', `Modelli confermati → <strong>${d.reasoner_label}</strong> + <strong>${d.implementer_label}</strong>`);
+      addSimpleMsg('system', 'Modelli confermati → <strong>' + d.reasoner_label + '</strong> + <strong>' + d.implementer_label + '</strong>');
       setStatus('avvio loop...');
       break;
 
     case 'iteration_start':
-      addSimpleMsg('system', `── Iterazione ${d.n} / ${d.max} ──`);
+      addSimpleMsg('system', '── Iterazione ' + d.n + ' / ' + d.max + ' ──');
       break;
 
     case 'claude_result':
@@ -602,11 +664,11 @@ function handleEvent(type, d){
       break;
 
     case 'gpt_realignment':
-      addSimpleMsg('claude', `🎯 <strong>Riallineamento GPT:</strong> ${d.feedback}`);
+      addSimpleMsg('claude', '🎯 <strong>Riallineamento GPT:</strong> ' + d.feedback);
       break;
 
     case 'fix_needed':
-      addSimpleMsg('claude', `🔧 <strong>Feedback correttivo:</strong> ${d.feedback}`);
+      addSimpleMsg('claude', '🔧 <strong>Feedback correttivo:</strong> ' + d.feedback);
       break;
 
     case 'spec_ready':
@@ -614,7 +676,16 @@ function handleEvent(type, d){
       break;
 
     case 'file_saved':
-      addSimpleMsg('system', `💾 Salvato: <code>${d.path}</code>`);
+      if(d.multi_file && d.files && d.files.length > 1){
+        const fileList = d.files.map(f => {
+          const parts = f.replace(/\\/g,'/').split('/');
+          return '<code>' + parts.slice(-2).join('/') + '</code>';
+        }).join(', ');
+        addSimpleMsg('system', '📁 Progetto salvato in <code>' + d.path.replace(/\\/g,'/').split('/').pop() + '/</code> — ' + d.files.length + ' file: ' + fileList);
+      } else {
+        const fname = (d.files && d.files[0]) ? d.files[0].replace(/\\/g,'/').split('/').pop() : d.path;
+        addSimpleMsg('system', '💾 Salvato: <code>' + fname + '</code>');
+      }
       break;
 
     case 'waiting_human':
@@ -627,17 +698,18 @@ function handleEvent(type, d){
 
     case 'loop_end':
       setStatus('completato');
+      document.getElementById('stopBtn').classList.remove('visible');
       document.getElementById('runBtn').disabled = false;
       const banner = document.getElementById('doneBanner');
       document.getElementById('doneSummary').textContent = d.summary || '';
-      let costBreakdown = `Totale: ${fmt(d.total_cost)}`;
+      var costBreakdown = 'Totale: ' + fmt(d.total_cost);
       if(d.by_model){
         const parts = Object.entries(d.by_model).map(([id, v]) =>
-          `${id.split('-')[0]}: ${fmt(v.cost)} (${fmtTok(v.tokens)})`
+          id.split('-')[0] + ': ' + fmt(v.cost) + ' (' + fmtTok(v.tokens) + ')'
         );
         costBreakdown += ' · ' + parts.join(' · ');
       }
-      document.getElementById('doneCost').textContent = costBreakdown + ` · ${d.iterations} iter.`;
+      document.getElementById('doneCost').textContent = costBreakdown + ' · ' + d.iterations + ' iter.';
       banner.classList.add('show');
       scrollFeed();
       if(es){ es.close(); }
@@ -645,12 +717,14 @@ function handleEvent(type, d){
 
     case 'error':
       setStatus('errore');
+      document.getElementById('stopBtn').classList.remove('visible');
       document.getElementById('runBtn').disabled = false;
-      addSimpleMsg('system', `❌ ${d.message}`);
+      addSimpleMsg('system', '❌ ' + d.message);
       break;
 
     case 'timeout':
       setStatus('timeout');
+      document.getElementById('stopBtn').classList.remove('visible');
       document.getElementById('runBtn').disabled = false;
       addSimpleMsg('system', '⏱ Timeout — nessuna risposta ricevuta.');
       break;
@@ -686,13 +760,14 @@ async function sendContinue(){
 
   // re-open SSE stream on same session_id
   if(es){ es.close(); }
-  es = new EventSource(`/stream/${sessionId}`);
+  es = new EventSource('/stream/' + sessionId);
   es.onmessage = e => {
     const evt = JSON.parse(e.data);
     handleEvent(evt.type, evt.data || {});
   };
   es.onerror = () => {
     setStatus('errore connessione');
+    document.getElementById('stopBtn').classList.remove('visible');
     document.getElementById('runBtn').disabled = false;
   };
 
@@ -700,5 +775,9 @@ async function sendContinue(){
   setStatus('riprendendo...');
 }
 </script>
+<button class="stop-fab" id="stopBtn" onclick="stopRun()">
+  <svg viewBox="0 0 16 16" style="width:11px;height:11px;fill:white"><rect x="2" y="2" width="12" height="12" rx="1.5"/></svg>
+  Stop
+</button>
 </body>
 </html>
