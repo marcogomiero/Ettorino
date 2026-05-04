@@ -1,500 +1,704 @@
 <!DOCTYPE html>
 <html lang="it">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Ettorino</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Mono:wght@400;500&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Outfit',sans-serif;background:#f7f6f2;min-height:100vh}
 
-    body {
-      font-family: 'Outfit', sans-serif;
-      background: #f7f6f2;
-      min-height: 100vh;
+    /* ── COST BAR (fixed top) ── */
+    .cost-bar{
+      position:sticky;top:0;z-index:100;
+      background:rgba(247,246,242,0.92);
+      backdrop-filter:blur(8px);
+      border-bottom:1px solid #e5e3de;
+      display:flex;align-items:center;justify-content:center;
+      gap:0;padding:0;
+      height:0;overflow:hidden;
+      transition:height .3s,padding .3s;
     }
+    .cost-bar.visible{height:44px;padding:0 1.5rem}
+    .cost-bar.visible .cost-inner{display:flex;align-items:center;gap:16px;width:100%;max-width:600px}
+    .cost-inner{display:none}
+
+    .cost-cell{
+      display:flex;align-items:center;gap:6px;
+      font-family:'DM Mono',monospace;font-size:.7rem;
+    }
+    .cost-cell .badge{
+      border-radius:999px;padding:2px 8px;font-weight:600;font-size:.65rem;letter-spacing:.04em;
+    }
+    .cost-cell.claude .badge{background:#ede9fe;color:#5b21b6}
+    .cost-cell.gpt    .badge{background:#d1fae5;color:#065f46}
+    .cost-cell .val{color:#1a1744;font-weight:500}
+    .cost-cell .tok{color:#aaa}
+    .cost-sep{width:1px;height:20px;background:#e5e3de}
+    .cost-total{margin-left:auto;font-family:'DM Mono',monospace;font-size:.72rem;font-weight:600;color:#1a1744}
+    .cost-total span{color:#f97316}
 
     /* ── HERO ── */
-    .hero {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 2.5rem 1rem 1.5rem;
+    .hero{display:flex;flex-direction:column;align-items:center;padding:2rem 1rem 1.2rem}
+    .logo-row{display:flex;align-items:flex-start;gap:5px}
+    .wordmark{font-family:'DM Serif Display',serif;font-size:2.8rem;letter-spacing:-.5px;color:#1a1744;line-height:1}
+    .ball-col{display:flex;flex-direction:column;align-items:center;padding-top:3px}
+    .ball-wrap{width:20px;height:20px;animation:bounce .7s cubic-bezier(.36,0,.66,-.56) infinite alternate}
+    @keyframes bounce{
+      0%  {transform:translateY(0) scaleX(1) scaleY(1)}
+      85% {transform:translateY(-9px) scaleX(.88) scaleY(1.12)}
+      100%{transform:translateY(-12px) scaleX(.82) scaleY(1.18)}
     }
-
-    .logo-row {
-      display: flex;
-      align-items: flex-start;
-      gap: 5px;
-    }
-
-    .wordmark {
-      font-family: 'DM Serif Display', serif;
-      font-size: 2.8rem;
-      letter-spacing: -0.5px;
-      color: #1a1744;
-      line-height: 1;
-    }
-
-    /* small ball, top-right of wordmark */
-    .ball-col {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding-top: 3px;
-    }
-
-    .ball-wrap {
-      width: 20px;
-      height: 20px;
-      animation: bounce 0.7s cubic-bezier(0.36, 0, 0.66, -0.56) infinite alternate;
-    }
-
-    @keyframes bounce {
-      0%   { transform: translateY(0)     scaleX(1)    scaleY(1); }
-      85%  { transform: translateY(-9px)  scaleX(0.88) scaleY(1.12); }
-      100% { transform: translateY(-12px) scaleX(0.82) scaleY(1.18); }
-    }
-
-    .ball {
-      width: 20px;
-      height: 20px;
-      border-radius: 50%;
-      background: radial-gradient(circle at 35% 32%, #fff5ee 0%, #f97316 38%, #c2410c 100%);
-      box-shadow: 0 1px 0 rgba(0,0,0,0.08), inset 0 -2px 4px rgba(0,0,0,0.18);
-      position: relative;
-    }
-    .ball::after {
-      content: '';
-      position: absolute;
-      top: 3px; left: 4px;
-      width: 6px; height: 4px;
-      border-radius: 50%;
-      background: rgba(255,255,255,0.45);
-      transform: rotate(-20deg);
-    }
-
-    .shadow {
-      width: 14px;
-      height: 3px;
-      background: rgba(0,0,0,0.10);
-      border-radius: 50%;
-      margin: 1px auto 0;
-      animation: shadow-pulse 0.7s cubic-bezier(0.36,0,0.66,-0.56) infinite alternate;
-    }
-    @keyframes shadow-pulse {
-      0%   { transform: scaleX(1);   opacity: 0.18; }
-      100% { transform: scaleX(0.5); opacity: 0.06; }
-    }
-
-    .tagline {
-      font-size: 0.76rem;
-      color: #aaa;
-      letter-spacing: 0.13em;
-      text-transform: uppercase;
-      margin-top: 0.6rem;
-    }
-
-    .version-badge {
-      margin-top: 0.5rem;
-      font-family: 'DM Mono', monospace;
-      font-size: 0.68rem;
-      color: #bbb;
-      background: #eeecea;
-      border: 1px solid #e0ddd8;
-      border-radius: 999px;
-      padding: 2px 10px;
-      letter-spacing: 0.06em;
-    }
-    .version-badge span {
-      color: #f97316;
-      font-weight: 500;
-    }
+    .ball{width:20px;height:20px;border-radius:50%;background:radial-gradient(circle at 35% 32%,#fff5ee 0%,#f97316 38%,#c2410c 100%);box-shadow:0 1px 0 rgba(0,0,0,.08),inset 0 -2px 4px rgba(0,0,0,.18);position:relative}
+    .ball::after{content:'';position:absolute;top:3px;left:4px;width:6px;height:4px;border-radius:50%;background:rgba(255,255,255,.45);transform:rotate(-20deg)}
+    .shadow{width:14px;height:3px;background:rgba(0,0,0,.10);border-radius:50%;margin:1px auto 0;animation:shp .7s cubic-bezier(.36,0,.66,-.56) infinite alternate}
+    @keyframes shp{0%{transform:scaleX(1);opacity:.18}100%{transform:scaleX(.5);opacity:.06}}
+    .tagline{font-size:.76rem;color:#aaa;letter-spacing:.13em;text-transform:uppercase;margin-top:.5rem}
+    .version-badge{margin-top:.4rem;font-family:'DM Mono',monospace;font-size:.68rem;color:#bbb;background:#eeecea;border:1px solid #e0ddd8;border-radius:999px;padding:2px 10px}
+    .version-badge span{color:#f97316;font-weight:500}
 
     /* ── COMMAND CENTER ── */
-    .command-center {
-      max-width: 600px;
-      margin: 1.5rem auto 2rem;
-      padding: 0 1rem;
-    }
+    .command-center{max-width:600px;margin:0 auto 1.5rem;padding:0 1rem}
+    .input-card{background:#fff;border:1px solid #e5e3de;border-radius:16px;padding:1rem 1.2rem .8rem;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+    .input-label{font-size:.68rem;letter-spacing:.14em;text-transform:uppercase;color:#aaa;font-family:'DM Mono',monospace;margin-bottom:.5rem}
+    textarea{width:100%;border:none;outline:none;resize:none;font-family:'Outfit',sans-serif;font-size:.95rem;color:#1a1744;background:transparent;line-height:1.6;min-height:70px}
+    textarea::placeholder{color:#ccc}
+    .input-footer{display:flex;align-items:center;justify-content:space-between;margin-top:.6rem;padding-top:.6rem;border-top:1px solid #f0eee9}
+    .run-btn{display:flex;align-items:center;gap:6px;background:#1a1744;color:#fff;border:none;border-radius:999px;padding:8px 18px;font-family:'Outfit',sans-serif;font-size:.82rem;font-weight:500;cursor:pointer;transition:background .15s,transform .1s}
+    .run-btn:hover{background:#f97316}
+    .run-btn:active{transform:scale(.97)}
+    .run-btn:disabled{background:#ccc;cursor:not-allowed}
+    .new-btn{display:flex;align-items:center;gap:5px;background:transparent;color:#aaa;border:1px solid #e5e3de;border-radius:999px;padding:7px 14px;font-family:'Outfit',sans-serif;font-size:.78rem;font-weight:500;cursor:pointer;transition:all .15s}
+    .new-btn:hover{border-color:#f97316;color:#f97316}
+    .new-btn:active{transform:scale(.97)}
 
-    .input-card {
-      background: #fff;
-      border: 1px solid #e5e3de;
-      border-radius: 16px;
-      padding: 1rem 1.2rem 0.8rem;
-      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
-    }
+    /* ── LIVE SECTION ── */
+    .live-section{max-width:600px;margin:0 auto;padding:0 1rem 3rem}
+    .live-label{font-size:.67rem;letter-spacing:.16em;text-transform:uppercase;color:#bbb;font-family:'DM Mono',monospace;margin-bottom:.9rem;display:flex;align-items:center;gap:6px}
+    .live-dot{width:5px;height:5px;border-radius:50%;background:#10b981;animation:pulse 1.4s infinite}
+    @keyframes pulse{0%,100%{opacity:.3}50%{opacity:1}}
+    .messages{display:flex;flex-direction:column;gap:10px}
 
-    .input-label {
-      font-size: 0.68rem;
-      letter-spacing: 0.14em;
-      text-transform: uppercase;
-      color: #aaa;
-      font-family: 'DM Mono', monospace;
-      margin-bottom: 0.5rem;
-    }
+    /* ── MESSAGE BUBBLES ── */
+    .msg{display:flex;gap:10px;opacity:0;transform:translateY(6px);transition:opacity .3s,transform .3s}
+    .msg.show{opacity:1;transform:translateY(0)}
 
-    textarea {
-      width: 100%;
-      border: none;
-      outline: none;
-      resize: none;
-      font-family: 'Outfit', sans-serif;
-      font-size: 0.95rem;
-      color: #1a1744;
-      background: transparent;
-      line-height: 1.6;
-      min-height: 70px;
-    }
-    textarea::placeholder { color: #ccc; }
+    .avatar{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.6rem;font-weight:700;flex-shrink:0;margin-top:3px}
+    .avatar.claude{background:#ede9fe;color:#5b21b6}
+    .avatar.gpt   {background:#d1fae5;color:#065f46}
+    .avatar.router{background:#fff7ed;color:#c2410c}
+    .avatar.system{background:#f1f5f9;color:#64748b}
+    .avatar.user  {background:#1a1744;color:#fff}
 
-    .input-footer {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-top: 0.6rem;
-      padding-top: 0.6rem;
-      border-top: 1px solid #f0eee9;
-    }
+    .bubble{background:#fff;border:1px solid #e5e3de;border-radius:12px 12px 12px 3px;padding:.65rem .9rem;font-size:.84rem;line-height:1.55;color:#1a1744;max-width:100%;box-shadow:0 1px 3px rgba(0,0,0,.04);word-break:break-word;overflow-wrap:anywhere}
+    .bubble.user-bubble{background:#1a1744;color:#fff;border-color:#1a1744;border-radius:12px 12px 3px 12px;margin-left:auto}
 
-    .cost-pill {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      background: #f7f6f2;
-      border: 1px solid #e5e3de;
-      border-radius: 999px;
-      padding: 4px 10px;
-      font-family: 'DM Mono', monospace;
-      font-size: 0.72rem;
-      color: #888;
-    }
-    .cost-pill .dot {
-      width: 6px; height: 6px;
-      border-radius: 50%;
-      background: #f97316;
-      animation: pulse 1.8s ease-in-out infinite;
-    }
-    @keyframes pulse { 0%,100%{opacity:0.3} 50%{opacity:1} }
-    .cost-val { color: #f97316; font-weight: 500; }
+    .agent-tag{display:inline-flex;align-items:center;gap:4px;font-size:.65rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px;padding:1px 7px;border-radius:999px}
+    .agent-tag.claude{background:#ede9fe;color:#5b21b6}
+    .agent-tag.gpt   {background:#d1fae5;color:#065f46}
+    .agent-tag.router{background:#fff7ed;color:#c2410c}
+    .agent-tag.system{background:#f1f5f9;color:#64748b}
 
-    .run-btn {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      background: #1a1744;
-      color: #fff;
-      border: none;
-      border-radius: 999px;
-      padding: 8px 18px;
-      font-family: 'Outfit', sans-serif;
-      font-size: 0.82rem;
-      font-weight: 500;
-      cursor: pointer;
-      transition: background 0.15s, transform 0.1s;
-    }
-    .run-btn:hover { background: #f97316; }
-    .run-btn:active { transform: scale(0.97); }
+    .bubble-body{margin-top:2px}
+    .bubble pre{font-family:'DM Mono',monospace;font-size:.75rem;background:#f7f6f2;border-radius:6px;padding:8px 10px;margin-top:6px;overflow-x:auto;display:block;line-height:1.5;color:#1a1744;white-space:pre;max-height:400px;overflow-y:auto}
+    .bubble code{font-family:'DM Mono',monospace;font-size:.75rem;background:#f7f6f2;border-radius:4px;padding:1px 5px;color:#c2410c;white-space:normal}
 
-    /* ── LIVE FEED ── */
-    .live-section {
-      max-width: 600px;
-      margin: 0 auto;
-      padding: 0 1rem 3rem;
-    }
+    .typing{display:flex;gap:4px;align-items:center;padding:4px 2px;margin-top:2px}
+    .typing span{width:5px;height:5px;border-radius:50%;background:#ccc;animation:tdot 1.1s ease-in-out infinite}
+    .typing span:nth-child(2){animation-delay:.2s}
+    .typing span:nth-child(3){animation-delay:.4s}
+    @keyframes tdot{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}}
 
-    .live-label {
-      font-size: 0.67rem;
-      letter-spacing: 0.16em;
-      text-transform: uppercase;
-      color: #bbb;
-      font-family: 'DM Mono', monospace;
-      margin-bottom: 0.9rem;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-    .live-label .live-dot {
-      width: 5px; height: 5px;
-      border-radius: 50%;
-      background: #10b981;
-      animation: pulse 1.4s infinite;
-    }
+    /* ── CONFIRM CARD ── */
+    .confirm-card{background:#fff;border:1.5px solid #e5e3de;border-radius:14px;padding:1.1rem 1.2rem;box-shadow:0 2px 8px rgba(0,0,0,.07);margin:4px 0}
+    .confirm-title{font-size:.7rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:#f97316;margin-bottom:.7rem}
+    .confirm-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem}
+    .confirm-label{font-size:.78rem;color:#888}
+    .confirm-value{font-size:.8rem;font-weight:600;color:#1a1744;font-family:'DM Mono',monospace}
+    .difficulty-pill{border-radius:999px;padding:2px 10px;font-size:.68rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+    .difficulty-pill.easy  {background:#d1fae5;color:#065f46}
+    .difficulty-pill.medium{background:#fef3c7;color:#92400e}
+    .difficulty-pill.hard     {background:#fee2e2;color:#991b1b}
+    .difficulty-pill.hard-mid {background:#fef3c7;color:#b45309}
+    .model-selects{display:flex;gap:8px;margin:.8rem 0}
+    .model-selects select{flex:1;border:1px solid #e5e3de;border-radius:8px;padding:6px 8px;font-family:'DM Mono',monospace;font-size:.72rem;color:#1a1744;background:#f7f6f2;outline:none;cursor:pointer}
+    .model-selects select:focus{border-color:#f97316}
+    .confirm-actions{display:flex;gap:8px;margin-top:.9rem}
+    .btn-confirm{flex:1;background:#1a1744;color:#fff;border:none;border-radius:999px;padding:8px 0;font-family:'Outfit',sans-serif;font-size:.82rem;font-weight:600;cursor:pointer;transition:background .15s}
+    .btn-confirm:hover{background:#f97316}
+    .btn-change{flex:1;background:#f7f6f2;color:#1a1744;border:1px solid #e5e3de;border-radius:999px;padding:8px 0;font-family:'Outfit',sans-serif;font-size:.82rem;font-weight:500;cursor:pointer;transition:background .15s}
+    .btn-change:hover{background:#eeecea}
+    .rationale{font-size:.75rem;color:#888;line-height:1.5;margin:.6rem 0;padding:.5rem .7rem;background:#f7f6f2;border-radius:8px;border-left:3px solid #f97316}
+    .cost-estimate{font-size:.72rem;color:#f97316;font-family:'DM Mono',monospace;font-weight:600}
 
-    .messages { display: flex; flex-direction: column; gap: 12px; }
+    /* ── ANSWER BOX ── */
+    .answer-box{background:#fff;border:1.5px solid #f97316;border-radius:12px;padding:.8rem 1rem;margin:4px 0}
+    .answer-question{font-size:.8rem;color:#1a1744;line-height:1.5;margin-bottom:.6rem;font-style:italic}
+    .answer-row{display:flex;gap:8px}
+    .answer-input{flex:1;border:1px solid #e5e3de;border-radius:8px;padding:6px 10px;font-family:'Outfit',sans-serif;font-size:.85rem;color:#1a1744;outline:none}
+    .answer-input:focus{border-color:#f97316}
+    .answer-btn{background:#f97316;color:#fff;border:none;border-radius:8px;padding:6px 14px;font-family:'Outfit',sans-serif;font-size:.82rem;font-weight:600;cursor:pointer}
 
-    .msg {
-      display: flex;
-      gap: 10px;
-      opacity: 0;
-      transform: translateY(8px);
-      transition: opacity 0.35s, transform 0.35s;
-    }
-    .msg.show { opacity: 1; transform: translateY(0); }
+    /* ── DONE BANNER ── */
+    .done-banner{background:#ecfdf5;border:1.5px solid #a7f3d0;border-radius:12px;padding:.9rem 1.1rem;margin:8px 0;display:none}
+    .done-banner.show{display:block}
+    .done-banner h3{font-size:.85rem;color:#065f46;margin-bottom:.4rem}
+    .done-banner p{font-size:.78rem;color:#047857;line-height:1.5}
+    .done-cost{font-family:'DM Mono',monospace;font-size:.7rem;color:#059669;margin-top:.4rem}
 
-    .avatar {
-      width: 30px; height: 30px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 0.65rem;
-      font-weight: 600;
-      flex-shrink: 0;
-      margin-top: 2px;
-    }
-    .avatar.claude { background: #ede9fe; color: #5b21b6; }
-    .avatar.gpt    { background: #d1fae5; color: #065f46; }
-    .avatar.router { background: #fff7ed; color: #c2410c; }
+    .placeholder-msg{text-align:center;color:#ccc;font-size:.82rem;padding:2rem 0;font-family:'DM Mono',monospace}
 
-    .bubble {
-      background: #fff;
-      border: 1px solid #e5e3de;
-      border-radius: 12px 12px 12px 3px;
-      padding: 0.7rem 0.9rem;
-      font-size: 0.85rem;
-      line-height: 1.55;
-      color: #1a1744;
-      max-width: 100%;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
-    }
-    .bubble .bname {
-      font-size: 0.66rem;
-      font-weight: 600;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      margin-bottom: 4px;
-    }
-    .bubble.claude .bname { color: #7c3aed; }
-    .bubble.gpt    .bname { color: #059669; }
-    .bubble.router .bname { color: #ea580c; }
-
-    .typing { display: flex; gap: 4px; align-items: center; padding: 4px 0; }
-    .typing span {
-      width: 5px; height: 5px;
-      border-radius: 50%;
-      background: #ccc;
-      animation: tdot 1.1s ease-in-out infinite;
-    }
-    .typing span:nth-child(2) { animation-delay: 0.2s; }
-    .typing span:nth-child(3) { animation-delay: 0.4s; }
-    @keyframes tdot {
-      0%,60%,100% { transform: translateY(0); }
-      30%          { transform: translateY(-5px); }
-    }
-
-    .done-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 5px;
-      background: #ecfdf5;
-      border: 1px solid #a7f3d0;
-      border-radius: 999px;
-      padding: 3px 10px;
-      font-size: 0.7rem;
-      font-weight: 500;
-      color: #065f46;
-      margin-top: 6px;
-    }
-
-    pre {
-      background: #f7f6f2;
-      border-radius: 8px;
-      padding: 8px 10px;
-      font-size: 0.75rem;
-      font-family: 'DM Mono', monospace;
-      margin-top: 6px;
-      overflow-x: auto;
-      line-height: 1.5;
-      color: #1a1744;
-      white-space: pre;
-    }
-
-    .placeholder-msg {
-      text-align: center;
-      color: #ccc;
-      font-size: 0.82rem;
-      padding: 2rem 0;
-      font-family: 'DM Mono', monospace;
-    }
+    /* alignment warning */
+    .alignment-warn{display:inline-flex;align-items:center;gap:4px;background:#fff7ed;border:1px solid #fed7aa;border-radius:999px;padding:2px 8px;font-size:.65rem;color:#c2410c;font-weight:600;margin-bottom:4px}
   </style>
 </head>
 <body>
 
-  <!-- HERO -->
-  <div class="hero">
-    <div class="logo-row">
-      <div class="wordmark">Ettorino</div>
-      <div class="ball-col">
-        <div class="ball-wrap"><div class="ball"></div></div>
-        <div class="shadow"></div>
-      </div>
+<!-- COST BAR -->
+<div class="cost-bar" id="costBar">
+  <div class="cost-inner" id="costInner">
+    <div class="cost-cell claude">
+      <span class="badge">Claude</span>
+      <span class="val" id="claudeCost">$0.0000</span>
+      <span class="tok" id="claudeTok">0 tok</span>
     </div>
-    <div class="tagline">Claude × GPT · difficulty-aware router</div>
-    <div class="version-badge" id="versionBadge">v&nbsp;<span>—</span></div>
+    <div class="cost-sep"></div>
+    <div class="cost-cell gpt">
+      <span class="badge">GPT</span>
+      <span class="val" id="gptCost">$0.0000</span>
+      <span class="tok" id="gptTok">0 tok</span>
+    </div>
+    <div class="cost-sep"></div>
+    <div class="cost-total">Totale&nbsp;<span id="totalCost">$0.0000</span></div>
   </div>
+</div>
 
-  <!-- COMMAND CENTER -->
-  <div class="command-center">
-    <div class="input-card">
-      <div class="input-label">// Descrivi il task</div>
-      <textarea id="taskInput" rows="3"
-        placeholder="Es: Scrivi uno script Python che monitora una cartella e invia una email quando arriva un nuovo file..."></textarea>
-      <div class="input-footer">
-        <div class="cost-pill">
-          <div class="dot"></div>
-          <span>costi live</span>
-          <span class="cost-val" id="costDisplay">$0.0000</span>
-          <span style="color:#ccc">·</span>
-          <span id="callCount">0</span> chiamate
-        </div>
-        <button class="run-btn" id="runBtn" onclick="startDemo()">
-          <svg viewBox="0 0 16 16" style="width:13px;height:13px;fill:white;vertical-align:middle"><polygon points="4,2 14,8 4,14"/></svg>
+<!-- HERO -->
+<div class="hero">
+  <div class="logo-row">
+    <div class="wordmark">Ettorino</div>
+    <div class="ball-col">
+      <div class="ball-wrap"><div class="ball"></div></div>
+      <div class="shadow"></div>
+    </div>
+  </div>
+  <div class="tagline">Claude × GPT · difficulty-aware router</div>
+  <div class="version-badge">v&nbsp;<span>{{ version }}</span></div>
+</div>
+
+<!-- COMMAND CENTER -->
+<div class="command-center">
+  <div class="input-card">
+    <div class="input-label">// Descrivi il task</div>
+    <textarea id="taskInput" rows="3"
+      placeholder="Es: Costruisci un CLI tool Python che salva note con timestamp..."></textarea>
+    <div class="input-footer">
+      <span style="font-size:.72rem;color:#ccc;font-family:'DM Mono',monospace" id="statusText">pronto</span>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="new-btn" id="newBtn" onclick="newTask()" style="display:none">
+          ↺ Nuovo task
+        </button>
+        <button class="run-btn" id="runBtn" onclick="startRun()">
+          <svg viewBox="0 0 16 16" style="width:12px;height:12px;fill:white"><polygon points="4,2 14,8 4,14"/></svg>
           Avvia
         </button>
       </div>
     </div>
   </div>
+</div>
 
-  <!-- LIVE FEED -->
-  <div class="live-section">
-    <div class="live-label">
-      <div class="live-dot"></div>
-      live feed
-    </div>
-    <div class="messages" id="messages">
-      <div class="placeholder-msg" id="placeholder">// in attesa di un task...</div>
+<!-- LIVE FEED -->
+<div class="live-section">
+  <div class="live-label"><div class="live-dot"></div>live feed</div>
+  <div class="messages" id="messages">
+    <div class="placeholder-msg" id="placeholder">// in attesa di un task...</div>
+  </div>
+  <div class="done-banner" id="doneBanner">
+    <h3>✓ Task completato</h3>
+    <p id="doneSummary"></p>
+    <div class="done-cost" id="doneCost"></div>
+    <div class="continue-box" id="continueBox" style="margin-top:.9rem;padding-top:.8rem;border-top:1px solid #a7f3d0">
+      <div style="font-size:.7rem;color:#059669;font-family:'DM Mono',monospace;margin-bottom:.5rem;letter-spacing:.06em;text-transform:uppercase">// vuoi modificare o aggiungere qualcosa?</div>
+      <div style="display:flex;gap:8px">
+        <input id="continueInput" placeholder="Es: aggiungi il comando 'delete', oppure 'aggiungi colori ANSI'..."
+          style="flex:1;border:1px solid #a7f3d0;border-radius:8px;padding:7px 10px;font-family:'Outfit',sans-serif;font-size:.85rem;color:#1a1744;outline:none;background:#fff"
+          onkeydown="if(event.key==='Enter')sendContinue()"
+          onfocus="this.style.borderColor='#059669'"
+          onblur="this.style.borderColor='#a7f3d0'"/>
+        <button onclick="sendContinue()"
+          style="background:#065f46;color:#fff;border:none;border-radius:8px;padding:7px 16px;font-family:'Outfit',sans-serif;font-size:.82rem;font-weight:600;cursor:pointer;transition:background .15s"
+          onmouseover="this.style.background='#047857'"
+          onmouseout="this.style.background='#065f46'">Continua →</button>
+      </div>
     </div>
   </div>
+</div>
 
-  <script>
-    /*
-      VERSION FROM ENV
-      ─────────────────────────────────────────────────────
-      In Flask, pass the version into the template:
+<script>
+// ── State ──────────────────────────────────
+let sessionId = null;
+let es = null;
 
-        @app.route('/')
-        def index():
-            return render_template(
-                'ettorino.html',
-                version=os.getenv('ETTORINO_VERSION', 'dev')
-            )
+// Cost tracking
+const costs = {
+  anthropic: {cost: 0, tokens: 0},
+  openai:    {cost: 0, tokens: 0},
+  total:     0
+};
 
-      Then replace the line below with the Jinja2 tag:
+// ── Helpers ────────────────────────────────
+function fmt(n){ return '$' + (n||0).toFixed(4); }
+function fmtTok(n){ return n >= 1000 ? (n/1000).toFixed(1)+'k tok' : n+' tok'; }
 
-        const version = "{{ version }}";
+function setStatus(txt){ document.getElementById('statusText').textContent = txt; }
 
-      The badge will then show the value from your .env automatically.
-      ─────────────────────────────────────────────────────
-    */
-    const version = window.ETTORINO_VERSION || 'dev';
-    document.getElementById('versionBadge').innerHTML = 'v&nbsp;<span>' + version + '</span>';
+function removePlaceholder(){
+  const ph = document.getElementById('placeholder');
+  if(ph) ph.remove();
+}
 
-    /* ── DEMO LOOP ── */
-    let running = false;
+function showCostBar(){
+  document.getElementById('costBar').classList.add('visible');
+}
 
-    const costs = [0.0008, 0.0018, 0.0024, 0.0028, 0.0030, 0.0031, 0.0031, 0.0031];
+function updateCostBar(){
+  document.getElementById('claudeCost').textContent = fmt(costs.anthropic.cost);
+  document.getElementById('claudeTok').textContent  = fmtTok(costs.anthropic.tokens);
+  document.getElementById('gptCost').textContent    = fmt(costs.openai.cost);
+  document.getElementById('gptTok').textContent     = fmtTok(costs.openai.tokens);
+  document.getElementById('totalCost').textContent  = fmt(costs.total).replace('$','');
+}
 
-    const demoScript = [
-      {
-        role: 'router', name: 'Router', delay: 400,
-        text: 'Task ricevuto. Analisi difficoltà... → MEDIUM. Assegno a Claude come Reasoner.'
-      },
-      {
-        role: 'claude', name: 'Claude', delay: 1200,
-        text: 'Capito. Pianificherò la struttura: watchdog sulla cartella, trigger su nuovo file, invio email via SMTP. Passo i dettagli implementativi a GPT.'
-      },
-      {
-        role: 'gpt', name: 'GPT-4o', delay: 2400,
-        text: 'Ricevuto. Implemento con watchdog library e smtplib. Scrivo il codice...'
-      },
-      {
-        role: 'gpt', name: 'GPT-4o', delay: 3800,
-        code: 'import smtplib\nfrom watchdog.observers import Observer\nfrom watchdog.events import FileSystemEventHandler\n\nclass Handler(FileSystemEventHandler):\n    def on_created(self, event):\n        if not event.is_directory:\n            send_email(event.src_path)\n\ndef send_email(path):\n    # SMTP logic qui\n    print(f"Email inviata per: {path}")',
-        text: 'Proto completo. Claude, vuoi rivedere la logica SMTP?'
-      },
-      {
-        role: 'claude', name: 'Claude', delay: 5400,
-        text: 'Il codice è solido. Aggiungerei un try/except su send_email e un retry esponenziale in caso di timeout SMTP.'
-      },
-      {
-        role: 'claude', name: 'Claude', delay: 6600,
-        code: 'import time\n\ndef send_email(path, retries=3):\n    for attempt in range(retries):\n        try:\n            # smtp send\n            return\n        except Exception as e:\n            time.sleep(2 ** attempt)\n    print("Invio fallito dopo", retries, "tentativi")',
-        text: 'Robusto. GPT, integra e chiudi.'
-      },
-      {
-        role: 'gpt', name: 'GPT-4o', delay: 8000,
-        text: 'Integrato. Script finale pronto. ✓ file rilevato, ✓ email inviata, ✓ retry su timeout.'
-      },
-      {
-        role: 'router', name: 'Router', delay: 9200,
-        text: 'Task completato — 3 chiamate · $0.0031 totale.',
-        done: true
+// ── Message builders ───────────────────────
+function createMsg(agentKey){
+  removePlaceholder();
+  const msg = document.createElement('div');
+  msg.className = 'msg';
+
+  const avatarMap = {claude:'C', gpt:'G', router:'R', system:'S', user:'U'};
+  const av = document.createElement('div');
+  av.className = 'avatar ' + (agentKey === 'user' ? 'user' : agentKey);
+  av.textContent = avatarMap[agentKey] || '?';
+
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble' + (agentKey === 'user' ? ' user-bubble' : '');
+
+  if(agentKey !== 'user'){
+    const tag = document.createElement('div');
+    tag.className = 'agent-tag ' + agentKey;
+    const labels = {claude:'{Claude}', gpt:'{GPT}', router:'{Router}', system:'{System}'};
+    tag.textContent = labels[agentKey] || agentKey;
+    bubble.appendChild(tag);
+  }
+
+  const body = document.createElement('div');
+  body.className = 'bubble-body';
+  bubble.appendChild(body);
+
+  msg.appendChild(av);
+  msg.appendChild(bubble);
+  document.getElementById('messages').appendChild(msg);
+  requestAnimationFrame(() => msg.classList.add('show'));
+
+  return {msg, bubble, body};
+}
+
+function addSimpleMsg(agentKey, html){
+  const {body} = createMsg(agentKey);
+  body.innerHTML = html;
+  scrollFeed();
+}
+
+function scrollFeed(){
+  window.scrollTo({top: document.body.scrollHeight, behavior:'smooth'});
+}
+
+// ── Streaming bubble ───────────────────────
+let currentStreamBody = null;
+let currentStreamText = '';
+
+function startStreamBubble(agentKey, modelLabel){
+  const {body} = createMsg(agentKey);
+  body.innerHTML = '<div class="typing"><span></span><span></span><span></span></div>';
+  if(modelLabel){
+    const ml = document.createElement('div');
+    ml.style.cssText = 'font-size:.63rem;color:#aaa;font-family:\'DM Mono\',monospace;margin-bottom:3px';
+    ml.textContent = modelLabel;
+    body.parentNode.insertBefore(ml, body);
+  }
+  currentStreamBody = body;
+  currentStreamText = '';
+  return body;
+}
+
+function renderMarkdown(text){
+  // Only render complete code blocks — don't break on partial ```
+  let out = text;
+  // complete fenced code blocks
+  out = out.replace(/```[\w]*\n([\s\S]*?)```/g, (_, code) =>
+    '<pre>' + code.replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</pre>'
+  );
+  // inline code — only if balanced
+  out = out.replace(/`([^`\n]+)`/g, '<code>$1</code>');
+  // bold **text**
+  out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  // newlines → <br> (but not inside pre)
+  out = out.replace(/\n/g, '<br>');
+  // hide raw JSON blobs — if line starts with { replace with nothing visible
+  out = out.replace(/<br>\s*\{[^<]{0,2000}\}<br>/gs, '<br>');
+  return out;
+}
+
+function appendStream(text){
+  if(!currentStreamBody) return;
+  currentStreamText += text;
+  const rendered = renderMarkdown(currentStreamText);
+  currentStreamBody.innerHTML = rendered || '<div class="typing"><span></span><span></span><span></span></div>';
+  scrollFeed();
+}
+
+function endStream(){
+  currentStreamBody = null;
+  currentStreamText = '';
+}
+
+// ── Confirm card ───────────────────────────
+function showConfirmCard(d){
+  removePlaceholder();
+  const wrapper = document.createElement('div');
+  wrapper.className = 'msg show';
+
+  const av = document.createElement('div');
+  av.className = 'avatar router';
+  av.textContent = 'R';
+
+  const card = document.createElement('div');
+  card.className = 'confirm-card';
+  card.innerHTML = `
+    <div class="confirm-title">⚡ Pronto · conferma i modelli</div>
+    <div class="confirm-row">
+      <span class="confirm-label">Difficoltà</span>
+      <span class="difficulty-pill ${d.difficulty}">${d.difficulty.toUpperCase()}</span>
+    </div>
+    <div class="rationale">${d.reasoning || ''}</div>
+    <div class="confirm-row" style="margin-top:.4rem">
+      <span class="confirm-label">Stima costo</span>
+      <span class="cost-estimate">~${fmt(d.estimated_cost)}</span>
+    </div>
+    <div style="font-size:.7rem;color:#aaa;margin:.6rem 0 .3rem;font-family:'DM Mono',monospace">MODELLI SELEZIONATI — puoi cambiarli:</div>
+    <div class="model-selects">
+      <select id="selReasoner">
+        ${d.available_reasoners.map(m =>
+          `<option value="${m.id}" ${m.id===d.reasoner_model?'selected':''}>${m.label} [${m.tier}]</option>`
+        ).join('')}
+      </select>
+      <select id="selImplementer">
+        ${d.available_implementers.map(m =>
+          `<option value="${m.id}" ${m.id===d.implementer_model?'selected':''}>${m.label} [${m.tier}]</option>`
+        ).join('')}
+      </select>
+    </div>
+    ${d.model_rationale ? `<div class="rationale" style="border-color:#a7f3d0">${d.model_rationale}</div>` : ''}
+    <div class="confirm-actions">
+      <button class="btn-confirm" onclick="confirmModels(false)">▶ Avvia con questi modelli</button>
+      <button class="btn-change"  onclick="confirmModels(true)">Cambia e avvia</button>
+    </div>`;
+
+  wrapper.appendChild(av);
+  wrapper.appendChild(card);
+  document.getElementById('messages').appendChild(wrapper);
+  scrollFeed();
+}
+
+function confirmModels(change){
+  const reasoner    = document.getElementById('selReasoner')?.value;
+  const implementer = document.getElementById('selImplementer')?.value;
+
+  let payload;
+  if(change){
+    payload = JSON.stringify({action:'change', reasoner, implementer});
+    addSimpleMsg('system', `Modelli aggiornati → <strong>${reasoner}</strong> + <strong>${implementer}</strong>`);
+  } else {
+    payload = JSON.stringify({action:'confirm'});
+  }
+
+  // disabilita i bottoni
+  document.querySelectorAll('.btn-confirm,.btn-change,.model-selects select').forEach(el => el.disabled = true);
+
+  fetch(`/respond/${sessionId}`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({response: payload})
+  });
+}
+
+// ── Answer box ─────────────────────────────
+function showAnswerBox(question){
+  removePlaceholder();
+  const wrapper = document.createElement('div');
+  wrapper.className = 'msg show';
+  wrapper.id = 'answerBox';
+
+  const av = document.createElement('div');
+  av.className = 'avatar claude';
+  av.textContent = 'C';
+
+  const box = document.createElement('div');
+  box.className = 'answer-box';
+  box.innerHTML = `
+    <div class="answer-question">❓ ${question}</div>
+    <div class="answer-row">
+      <input class="answer-input" id="ansInput" placeholder="La tua risposta..." onkeydown="if(event.key==='Enter')sendAnswer()"/>
+      <button class="answer-btn" onclick="sendAnswer()">Invia</button>
+    </div>`;
+
+  wrapper.appendChild(av);
+  wrapper.appendChild(box);
+  document.getElementById('messages').appendChild(wrapper);
+  document.getElementById('ansInput')?.focus();
+  scrollFeed();
+}
+
+function sendAnswer(){
+  const val = document.getElementById('ansInput')?.value.trim();
+  if(!val || !sessionId) return;
+  // mostra la risposta come bolla utente
+  addSimpleMsg('user', val);
+  // rimuovi la answer box
+  document.getElementById('answerBox')?.remove();
+  fetch(`/respond/${sessionId}`,{
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({response: val})
+  });
+}
+
+// ── New task reset ─────────────────────────
+function newTask(){
+  // chiudi SSE se aperto
+  if(es){ es.close(); es = null; }
+  sessionId = null;
+
+  // svuota feed
+  document.getElementById('messages').innerHTML =
+    '<div class="placeholder-msg" id="placeholder">// in attesa di un task...</div>';
+
+  // nasconde done banner e cost bar
+  document.getElementById('doneBanner').classList.remove('show');
+  const cb = document.getElementById('continueBox'); if(cb) cb.style.display='block';
+  const ci = document.getElementById('continueInput'); if(ci) ci.value='';
+  document.getElementById('costBar').classList.remove('visible');
+
+  // reset costi
+  costs.anthropic = {cost:0, tokens:0};
+  costs.openai    = {cost:0, tokens:0};
+  costs.total     = 0;
+  updateCostBar();
+
+  // reset UI
+  document.getElementById('taskInput').value = '';
+  document.getElementById('taskInput').focus();
+  setStatus('pronto');
+  document.getElementById('runBtn').disabled = false;
+  document.getElementById('newBtn').style.display = 'none';
+
+  // scroll in cima
+  window.scrollTo({top: 0, behavior: 'smooth'});
+}
+
+// ── Main run ───────────────────────────────
+async function startRun(){
+  const task = document.getElementById('taskInput').value.trim();
+  if(!task) return;
+
+  // Reset UI
+  document.getElementById('messages').innerHTML = '';
+  document.getElementById('doneBanner').classList.remove('show');
+  costs.anthropic = {cost:0,tokens:0};
+  costs.openai    = {cost:0,tokens:0};
+  costs.total     = 0;
+  updateCostBar();
+  showCostBar();
+  document.getElementById('runBtn').disabled = true;
+  document.getElementById('newBtn').style.display = 'flex';
+  setStatus('avvio...');
+
+  const res = await fetch('/run',{
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({task})
+  });
+  const json = await res.json();
+  sessionId = json.session_id;
+
+  if(es){ es.close(); }
+  es = new EventSource(`/stream/${sessionId}`);
+
+  es.onmessage = e => {
+    const evt = JSON.parse(e.data);
+    handleEvent(evt.type, evt.data || {});
+  };
+
+  es.onerror = () => {
+    setStatus('errore connessione');
+    document.getElementById('runBtn').disabled = false;
+  };
+}
+
+// ── Event handler ──────────────────────────
+function handleEvent(type, d){
+  switch(type){
+
+    case 'loop_start':
+      setStatus('classifico...');
+      addSimpleMsg('system', `Task avviato: <em>${d.task}</em>`);
+      break;
+
+    case 'agent_start':
+      if(d.agent === 'router') setStatus('router analizza...');
+      else setStatus(`${d.label} ${d.model ? '· '+d.model : ''} sta lavorando...`);
+      startStreamBubble(d.agent, d.model || null);
+      break;
+
+    case 'agent_chunk':
+      appendStream(d.text);
+      break;
+
+    case 'agent_end':
+      endStream();
+      break;
+
+    case 'cost_update': {
+      const provider = d.provider;
+      if(provider === 'anthropic'){
+        costs.anthropic.cost   += d.call_cost || 0;
+        costs.anthropic.tokens += (d.input_tokens||0) + (d.output_tokens||0);
+      } else {
+        costs.openai.cost   += d.call_cost || 0;
+        costs.openai.tokens += (d.input_tokens||0) + (d.output_tokens||0);
       }
-    ];
-
-    function addMessage(item, idx) {
-      const container = document.getElementById('messages');
-      const ph = document.getElementById('placeholder');
-      if (ph) ph.remove();
-
-      const msg = document.createElement('div');
-      msg.className = 'msg';
-
-      const av = document.createElement('div');
-      av.className = 'avatar ' + item.role;
-      av.textContent = item.role === 'claude' ? 'C' : item.role === 'gpt' ? 'G' : 'R';
-
-      const bubble = document.createElement('div');
-      bubble.className = 'bubble ' + item.role;
-      bubble.innerHTML = '<div class="bname">' + item.name + '</div><div class="typing"><span></span><span></span><span></span></div>';
-
-      msg.appendChild(av);
-      msg.appendChild(bubble);
-      container.appendChild(msg);
-      requestAnimationFrame(() => msg.classList.add('show'));
-
-      setTimeout(() => {
-        let html = '<div class="bname">' + item.name + '</div>';
-        if (item.code) html += '<pre>' + item.code + '</pre>';
-        if (item.text) html += '<p style="margin-top:4px">' + item.text + '</p>';
-        if (item.done) html += '<div class="done-badge">✓ completato</div>';
-        bubble.innerHTML = html;
-
-        document.getElementById('costDisplay').textContent = '$' + costs[Math.min(idx, costs.length - 1)].toFixed(4);
-        document.getElementById('callCount').textContent = idx + 1;
-
-        if (item.done) {
-          running = false;
-          const btn = document.getElementById('runBtn');
-          btn.innerHTML = 'Nuovo';
-          btn.onclick = resetDemo;
-        }
-      }, 900);
+      costs.total = d.total_cost || costs.anthropic.cost + costs.openai.cost;
+      updateCostBar();
+      break;
     }
 
-    function startDemo() {
-      if (running) return;
-      running = true;
-      document.getElementById('costDisplay').textContent = '$0.0000';
-      document.getElementById('callCount').textContent = '0';
-      document.getElementById('messages').innerHTML = '';
-      const btn = document.getElementById('runBtn');
-      btn.innerHTML = 'running...';
-      demoScript.forEach((item, i) => setTimeout(() => addMessage(item, i), item.delay));
-    }
+    case 'confirm_models':
+      setStatus('in attesa conferma modelli...');
+      showConfirmCard(d);
+      break;
 
-    function resetDemo() {
-      document.getElementById('messages').innerHTML = '<div class="placeholder-msg" id="placeholder">// in attesa di un task...</div>';
-      document.getElementById('costDisplay').textContent = '$0.0000';
-      document.getElementById('callCount').textContent = '0';
-      running = false;
-      const btn = document.getElementById('runBtn');
-      btn.innerHTML = '<svg viewBox="0 0 16 16" style="width:13px;height:13px;fill:white;vertical-align:middle"><polygon points="4,2 14,8 4,14"/></svg> Avvia';
-      btn.onclick = startDemo;
-    }
-  </script>
+    case 'models_updated':
+      addSimpleMsg('system', `Modelli confermati → <strong>${d.reasoner_label}</strong> + <strong>${d.implementer_label}</strong>`);
+      setStatus('avvio loop...');
+      break;
+
+    case 'iteration_start':
+      addSimpleMsg('system', `── Iterazione ${d.n} / ${d.max} ──`);
+      break;
+
+    case 'claude_result':
+      if(d.alignment === 'deviated'){
+        addSimpleMsg('system', '<span class="alignment-warn">⚠ GPT fuori binari — Claude corregge</span>');
+      }
+      break;
+
+    case 'gpt_realignment':
+      addSimpleMsg('claude', `🎯 <strong>Riallineamento GPT:</strong> ${d.feedback}`);
+      break;
+
+    case 'fix_needed':
+      addSimpleMsg('claude', `🔧 <strong>Feedback correttivo:</strong> ${d.feedback}`);
+      break;
+
+    case 'spec_ready':
+      // spec mostrata nel stream claude_result
+      break;
+
+    case 'file_saved':
+      addSimpleMsg('system', `💾 Salvato: <code>${d.path}</code>`);
+      break;
+
+    case 'waiting_human':
+      setStatus('in attesa risposta...');
+      showAnswerBox(d.question);
+      break;
+
+    case 'human_response':
+      break;
+
+    case 'loop_end':
+      setStatus('completato');
+      document.getElementById('runBtn').disabled = false;
+      const banner = document.getElementById('doneBanner');
+      document.getElementById('doneSummary').textContent = d.summary || '';
+      let costBreakdown = `Totale: ${fmt(d.total_cost)}`;
+      if(d.by_model){
+        const parts = Object.entries(d.by_model).map(([id, v]) =>
+          `${id.split('-')[0]}: ${fmt(v.cost)} (${fmtTok(v.tokens)})`
+        );
+        costBreakdown += ' · ' + parts.join(' · ');
+      }
+      document.getElementById('doneCost').textContent = costBreakdown + ` · ${d.iterations} iter.`;
+      banner.classList.add('show');
+      scrollFeed();
+      if(es){ es.close(); }
+      break;
+
+    case 'error':
+      setStatus('errore');
+      document.getElementById('runBtn').disabled = false;
+      addSimpleMsg('system', `❌ ${d.message}`);
+      break;
+
+    case 'timeout':
+      setStatus('timeout');
+      document.getElementById('runBtn').disabled = false;
+      addSimpleMsg('system', '⏱ Timeout — nessuna risposta ricevuta.');
+      break;
+
+    case 'ping':
+      break;
+  }
+}
+
+// ── Continue conversation ───────────────────
+async function sendContinue(){
+  const followup = document.getElementById('continueInput')?.value.trim();
+  if(!followup || !sessionId) return;
+
+  // hide continue box, show "continuando..."
+  document.getElementById('continueBox').style.display = 'none';
+  document.getElementById('doneBanner').classList.remove('show');
+
+  // show user message in feed
+  addSimpleMsg('user', followup);
+
+  const res = await fetch('/continue', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({session_id: sessionId, followup})
+  });
+  const json = await res.json();
+  if(json.error){
+    addSimpleMsg('system', '❌ ' + json.error);
+    document.getElementById('continueBox').style.display = 'block';
+    document.getElementById('doneBanner').classList.add('show');
+    return;
+  }
+
+  // re-open SSE stream on same session_id
+  if(es){ es.close(); }
+  es = new EventSource(`/stream/${sessionId}`);
+  es.onmessage = e => {
+    const evt = JSON.parse(e.data);
+    handleEvent(evt.type, evt.data || {});
+  };
+  es.onerror = () => {
+    setStatus('errore connessione');
+    document.getElementById('runBtn').disabled = false;
+  };
+
+  document.getElementById('continueInput').value = '';
+  setStatus('riprendendo...');
+}
+</script>
 </body>
 </html>

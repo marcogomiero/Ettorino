@@ -7,340 +7,530 @@ from pathlib import Path
 from flask import Flask, render_template, request, Response, jsonify
 import anthropic
 import openai
+from dotenv import load_dotenv
 
-# Carica variabili da .env se presente
-try:
-    from dotenv import load_dotenv
-    load_dotenv()
-except ImportError:
-    pass  # python-dotenv non installato, usa variabili d'ambiente di sistema
+import ssl
+import httpx
+import urllib3
+
+# Silenzia i warning SSL (proxy aziendali con self-signed cert)
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+load_dotenv()
 
 app = Flask(__name__)
 
 WORKSPACE = Path("workspace")
 WORKSPACE.mkdir(exist_ok=True)
 
-event_queues = {}
-
 # ─────────────────────────────────────────────
-# MODEL REGISTRY  (aggiorna prezzi qui se cambiano)
+# MODEL REGISTRY
 # prezzi in $ per milione di token
 # ─────────────────────────────────────────────
 MODELS = {
-    "claude-haiku-4-5-20251001": {
-        "provider": "anthropic", "label": "Claude Haiku 4.5",
-        "tier": "easy", "input_cost": 0.80, "output_cost": 4.00,
+    # Anthropic
+    "claude-haiku-4-5": {
+        "provider": "anthropic",
+        "label": "Claude Haiku 4.5",
+        "role": "reasoner",
+        "tier": "easy",
+        "input_cost": 1.00,
+        "output_cost": 5.00,
     },
-    "gpt-4o-mini": {
-        "provider": "openai", "label": "GPT-4o mini",
-        "tier": "easy", "input_cost": 0.15, "output_cost": 0.60,
+    "claude-sonnet-4-6": {
+        "provider": "anthropic",
+        "label": "Claude Sonnet 4.6",
+        "role": "reasoner",
+        "tier": "medium",
+        "input_cost": 3.00,
+        "output_cost": 15.00,
     },
-    "claude-sonnet-4-5-20251001": {
-        "provider": "anthropic", "label": "Claude Sonnet 4.5",
-        "tier": "medium", "input_cost": 3.00, "output_cost": 15.00,
+    "claude-opus-4-7": {
+        "provider": "anthropic",
+        "label": "Claude Opus 4.7",
+        "role": "reasoner",
+        "tier": "hard",
+        "input_cost": 5.00,
+        "output_cost": 25.00,
     },
-    "gpt-4o": {
-        "provider": "openai", "label": "GPT-4o",
-        "tier": "medium", "input_cost": 2.50, "output_cost": 10.00,
+    "claude-opus-4-6": {
+        "provider": "anthropic",
+        "label": "Claude Opus 4.6",
+        "role": "reasoner",
+        "tier": "hard-mid",
+        "input_cost": 5.00,
+        "output_cost": 25.00,
     },
-    "claude-opus-4-5-20251001": {
-        "provider": "anthropic", "label": "Claude Opus 4.5",
-        "tier": "hard", "input_cost": 15.00, "output_cost": 75.00,
+    # OpenAI
+    "gpt-4.1-mini": {
+        "provider": "openai",
+        "label": "GPT-4.1 mini",
+        "role": "implementer",
+        "tier": "easy",
+        "input_cost": 0.40,
+        "output_cost": 1.60,
+    },
+    "gpt-4.1": {
+        "provider": "openai",
+        "label": "GPT-4.1",
+        "role": "implementer",
+        "tier": "medium",
+        "input_cost": 2.00,
+        "output_cost": 8.00,
     },
     "o3": {
-        "provider": "openai", "label": "o3",
-        "tier": "hard", "input_cost": 10.00, "output_cost": 40.00,
+        "provider": "openai",
+        "label": "o3",
+        "role": "implementer",
+        "tier": "hard",
+        "input_cost": 15.00,
+        "output_cost": 60.00,
     },
 }
 
-TIER_DEFAULTS = {
-    "easy":   {"reasoner": "claude-haiku-4-5-20251001",   "implementer": "gpt-4o-mini"},
-    "medium": {"reasoner": "claude-sonnet-4-5-20251001",  "implementer": "gpt-4o"},
-    "hard":   {"reasoner": "claude-opus-4-5-20251001",    "implementer": "o3"},
+# Tier → modelli di default
+TIER_MODELS = {
+    "easy":   {"reasoner": "claude-haiku-4-5",   "implementer": "gpt-4.1-mini"},
+    "medium": {"reasoner": "claude-sonnet-4-6",  "implementer": "gpt-4.1"},
+    "hard":   {"reasoner": "claude-opus-4-7",    "implementer": "o3"},
 }
 
-TIER_LABELS = {
-    "easy":   "🟢 FACILE",
-    "medium": "🟡 MEDIO",
-    "hard":   "🔴 DIFFICILE",
-}
+# State globale sessioni
+event_queues   = {}
+session_costs  = {}
+human_responses = {}
+model_overrides = {}  # session_id → {"reasoner": ..., "implementer": ...}
+session_state  = {}  # session_id → {"code": str, "task": str, "reasoner": str, "implementer": str, "iteration": int}
 
-session_costs = {}
-
-def calc_cost(model_id, input_tokens, output_tokens):
-    m = MODELS.get(model_id, {})
-    return (input_tokens / 1_000_000) * m.get("input_cost", 0) + \
-           (output_tokens / 1_000_000) * m.get("output_cost", 0)
-
-def add_cost(session_id, model_id, input_tokens, output_tokens):
-    cost = calc_cost(model_id, input_tokens, output_tokens)
-    if session_id not in session_costs:
-        session_costs[session_id] = {"total": 0.0, "calls": []}
-    session_costs[session_id]["total"] += cost
-    session_costs[session_id]["calls"].append({
-        "model": MODELS.get(model_id, {}).get("label", model_id),
-        "input_tokens": input_tokens,
-        "output_tokens": output_tokens,
-        "cost": cost
-    })
-    return session_costs[session_id]["total"]
-
-def estimate_tokens(text):
-    return max(1, len(text) // 4)
-
-def emit(q, event_type, data):
-    q.put({"type": event_type, "data": data})
+# ─────────────────────────────────────────────
+# HELPERS
+# ─────────────────────────────────────────────
+def _make_http_client() -> httpx.Client:
+    """Client httpx senza verifica SSL — necessario per proxy aziendali con certificati self-signed."""
+    return httpx.Client(
+        transport=httpx.HTTPTransport(verify=False),
+        verify=False,
+        timeout=120.0,
+    )
 
 def get_anthropic_client():
     key = os.environ.get("ANTHROPIC_API_KEY")
     if not key:
-        raise ValueError("ANTHROPIC_API_KEY non trovata")
-    return anthropic.Anthropic(api_key=key)
+        raise ValueError("ANTHROPIC_API_KEY mancante nel .env")
+    return anthropic.Anthropic(api_key=key, http_client=_make_http_client())
 
 def get_openai_client():
     key = os.environ.get("OPENAI_API_KEY")
     if not key:
-        raise ValueError("OPENAI_API_KEY non trovata")
-    return openai.OpenAI(api_key=key)
+        raise ValueError("OPENAI_API_KEY mancante nel .env")
+    return openai.OpenAI(api_key=key, http_client=_make_http_client())
+
+def estimate_tokens(text: str) -> int:
+    return max(1, len(text) // 4)
+
+def calc_cost(model_id: str, input_tok: int, output_tok: int) -> tuple[float, float]:
+    m = MODELS.get(model_id, {})
+    cost = (input_tok * m.get("input_cost", 0) + output_tok * m.get("output_cost", 0)) / 1_000_000
+    return cost, cost
+
+def add_cost(session_id: str, model_id: str, input_tok: int, output_tok: int) -> float:
+    cost, _ = calc_cost(model_id, input_tok, output_tok)
+    if session_id not in session_costs:
+        session_costs[session_id] = {"total": 0.0, "by_model": {}}
+    session_costs[session_id]["total"] += cost
+    prev = session_costs[session_id]["by_model"].get(model_id, {"cost": 0.0, "tokens": 0})
+    session_costs[session_id]["by_model"][model_id] = {
+        "cost": prev["cost"] + cost,
+        "tokens": prev["tokens"] + input_tok + output_tok,
+    }
+    return session_costs[session_id]["total"]
+
+def emit(q: queue.Queue, event_type: str, data: dict):
+    q.put({"type": event_type, "data": data})
+
+def wait_for_human(session_id: str, timeout: int = 300) -> str | None:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if session_id in human_responses:
+            return human_responses.pop(session_id)
+        time.sleep(0.3)
+    return None
 
 # ─────────────────────────────────────────────
-# STEP 0: CLASSIFIER  (usa sempre Haiku — economico)
+# FASE 0 — CLASSIFIER
+# Usa sempre Sonnet per la classificazione: abbastanza smart, non troppo caro
 # ─────────────────────────────────────────────
-def classify_task(client, session_id, task, q):
-    emit(q, "classifying", {"message": "Analisi difficoltà del task..."})
+CLASSIFIER_MODEL = "claude-sonnet-4-6"
 
-    system = """Sei un esperto di architettura software. Analizza il task e rispondi SOLO con JSON valido, nessun testo fuori.
+def classify_task(client: anthropic.Anthropic, session_id: str, task: str, q: queue.Queue) -> dict:
+    emit(q, "agent_start", {"agent": "router", "label": "Router"})
 
-Criteri:
-- easy: script semplici, utility, <100 righe, logica lineare
-- medium: app con più componenti, API integration, 100-500 righe
-- hard: sistemi complessi, algoritmi avanzati, ML/AI, architetture distribuite, >500 righe o alta ambiguità
+    system = """Sei il router intelligente di Ettorino, un assistente agente Claude×GPT.
+Il tuo compito è analizzare il task dell'utente e decidere:
+1. La difficoltà: easy / medium / hard
+2. I modelli migliori per massimizzare qualità e minimizzare costi
+3. Se hai dubbi sul task, formula una domanda di chiarimento
+4. Una stima realistica di token e costo
 
-Risposta JSON:
+Criteri difficoltà:
+- easy: script semplice, funzione singola, utility < 100 righe, nessuna dipendenza esterna complessa
+- medium: app multi-componente, API integration, logica non banale, 100-500 righe
+- hard-mid: sistemi complessi ma circoscritti, architetture multi-componente, 300-600 righe — usa Opus 4.6
+- hard: sistemi molto complessi, ML/AI, architetture multi-file, algoritmi avanzati, > 600 righe — usa Opus 4.7
+
+Suggerisci sempre il modello più adatto al task specifico, non il più economico di default.
+Se il task è ambiguo, formulare UNA domanda precisa è più utile che procedere a caso.
+
+Rispondi SOLO con JSON valido, nessun testo fuori:
 {
-  "difficulty": "easy" | "medium" | "hard",
+  "difficulty": "easy|medium|hard-mid|hard",
   "confidence": 0.0-1.0,
   "reasoning": "spiegazione breve",
-  "estimated_input_tokens": number,
-  "estimated_output_tokens": number,
-  "needs_clarification": true | false,
-  "clarification_question": "domanda oppure null",
-  "complexity_factors": ["fattore1", ...]
-}
+  "suggested_reasoner": "claude-haiku-4-5|claude-sonnet-4-6|claude-opus-4-6|claude-opus-4-7",
+  "suggested_implementer": "gpt-4.1-mini|gpt-4.1|o3",
+  "model_rationale": "perché questi modelli per questo task",
+  "estimated_input_tokens": 1000,
+  "estimated_output_tokens": 2000,
+  "estimated_cost_usd": 0.05,
+  "needs_clarification": true|false,
+  "clarification_question": "domanda se needs_clarification è true, altrimenti null",
+  "complexity_factors": ["fattore1", "fattore2"]
+}"""
 
-Stima token: input tipicamente 500-2000, output tipicamente 500-5000 a seconda della complessità."""
+    emit(q, "agent_chunk", {"agent": "router", "text": "Analizzo il task..."})
 
     response = client.messages.create(
-        model="claude-haiku-4-5-20251001",
+        model=CLASSIFIER_MODEL,
         max_tokens=600,
         system=system,
-        messages=[{"role": "user", "content": f"Classifica:\n\n{task}"}]
+        messages=[{"role": "user", "content": f"Task da classificare:\n\n{task}"}]
     )
 
-    raw = response.content[0].text
-    in_tok = response.usage.input_tokens
-    out_tok = response.usage.output_tokens
-    total = add_cost(session_id, "claude-haiku-4-5-20251001", in_tok, out_tok)
+    raw = response.content[0].text.strip()
+    input_tok = response.usage.input_tokens
+    output_tok = response.usage.output_tokens
+    total = add_cost(session_id, CLASSIFIER_MODEL, input_tok, output_tok)
 
     emit(q, "cost_update", {
-        "model_label": "Claude Haiku 4.5",
-        "input_tokens": in_tok, "output_tokens": out_tok,
-        "call_cost": calc_cost("claude-haiku-4-5-20251001", in_tok, out_tok),
-        "total_cost": total, "phase": "classifier"
+        "model_id": CLASSIFIER_MODEL,
+        "model_label": MODELS[CLASSIFIER_MODEL]["label"],
+        "provider": "anthropic",
+        "input_tokens": input_tok,
+        "output_tokens": output_tok,
+        "call_cost": calc_cost(CLASSIFIER_MODEL, input_tok, output_tok)[0],
+        "total_cost": total,
     })
 
     try:
-        clean = raw.strip().strip("```json").strip("```").strip()
-        return json.loads(clean)
+        clean = raw.replace("```json", "").replace("```", "").strip()
+        result = json.loads(clean)
     except Exception:
-        return {
-            "difficulty": "medium", "confidence": 0.5,
-            "reasoning": "Classificazione fallita, uso tier medio",
-            "estimated_input_tokens": 1000, "estimated_output_tokens": 2000,
-            "needs_clarification": False, "clarification_question": None,
-            "complexity_factors": []
-        }
+        result = {"difficulty": "medium", "confidence": 0.5, "reasoning": raw,
+                  "suggested_reasoner": "claude-sonnet-4-6",
+                  "suggested_implementer": "gpt-4.1",
+                  "needs_clarification": False}
+
+    emit(q, "agent_end", {"agent": "router"})
+    return result
 
 # ─────────────────────────────────────────────
-# STEP 1: REASONER
+# FASE 1 — CLAUDE REASONER
+# Ragiona, specifica, verifica, tiene GPT sui binari
 # ─────────────────────────────────────────────
-def claude_reason(client, session_id, task, context, model_id, q):
-    emit(q, "agent_start", {
-        "agent": "claude", "phase": "reasoning",
-        "model": MODELS[model_id]["label"]
-    })
+def claude_reason(client: anthropic.Anthropic, session_id: str, task: str,
+                  context: str, model_id: str, iteration: int, q: queue.Queue) -> dict:
 
-    system = """Sei un architetto software senior. Ragiona e produci specifiche tecniche.
+    emit(q, "agent_start", {"agent": "claude", "label": "Claude", "model": MODELS[model_id]["label"]})
+
+    system = """Sei Claude, il Reasoner di Ettorino. Il tuo ruolo è:
+1. RAGIONARE sul task e produrre specifiche tecniche precise per GPT
+2. VERIFICARE il codice prodotto da GPT ad ogni iterazione
+3. TENERE GPT SUI BINARI: se GPT ha deviato dal task, correggi esplicitamente
+4. CHIEDERE all'utente se hai dubbi genuini prima di procedere
+5. DICHIARARE DONE solo quando il codice è completo, corretto e testabile
+
+Quando scrivi le spec per GPT sii MOLTO specifico:
+- Struttura esatta dei file
+- Firme delle funzioni
+- Casi edge da gestire
+- Formato dell'output atteso
+
+Se GPT ha prodotto codice che non soddisfa le spec, indica ESATTAMENTE cosa correggere.
 
 Rispondi SOLO con JSON valido:
 {
-  "status": "implement" | "fix" | "ask" | "done",
-  "thoughts": "ragionamento passo per passo",
-  "spec": "specifiche tecniche dettagliate (solo se implement)",
-  "feedback": "problemi trovati nel codice (solo se fix)",
-  "question": "domanda per l'utente (solo se ask)",
-  "summary": "cosa è stato fatto (solo se done)"
+  "status": "implement|fix|ask|done",
+  "thoughts": "il tuo ragionamento interno (visibile all'utente)",
+  "spec": "specifiche dettagliate per GPT (solo se status=implement)",
+  "feedback": "feedback correttivo preciso per GPT (solo se status=fix)",
+  "question": "domanda per l'utente (solo se status=ask)",
+  "summary": "riepilogo finale (solo se status=done)",
+  "gpt_alignment": "valutazione se GPT ha seguito le spec: ok|deviated|partial"
 }"""
 
-    full_response = ""
+    user_content = f"""TASK ORIGINALE:
+{task}
+
+CONTESTO ATTUALE (iterazione {iteration}):
+{context}
+
+Analizza, ragiona e decidi il prossimo passo."""
+
+    full_text = ""
+    input_tok = 0
+    output_tok = 0
 
     with client.messages.stream(
         model=model_id,
-        max_tokens=4000,
+        max_tokens=2000,
         system=system,
-        messages=[{"role": "user", "content": f"TASK:\n{task}\n\nCONTESTO:\n{context}"}]
+        messages=[{"role": "user", "content": user_content}]
     ) as stream:
         for text in stream.text_stream:
-            full_response += text
-            emit(q, "claude_chunk", {"text": text})
-        final = stream.get_final_message()
-        in_tok = final.usage.input_tokens
-        out_tok = final.usage.output_tokens
+            full_text += text
+            emit(q, "agent_chunk", {"agent": "claude", "text": text})
+        final_msg = stream.get_final_message()
+        input_tok = final_msg.usage.input_tokens
+        output_tok = final_msg.usage.output_tokens
 
-    total = add_cost(session_id, model_id, in_tok, out_tok)
-    emit(q, "agent_end", {"agent": "claude"})
+    total = add_cost(session_id, model_id, input_tok, output_tok)
+
     emit(q, "cost_update", {
+        "model_id": model_id,
         "model_label": MODELS[model_id]["label"],
-        "input_tokens": in_tok, "output_tokens": out_tok,
-        "call_cost": calc_cost(model_id, in_tok, out_tok),
-        "total_cost": total, "phase": "reasoning"
+        "provider": "anthropic",
+        "input_tokens": input_tok,
+        "output_tokens": output_tok,
+        "call_cost": calc_cost(model_id, input_tok, output_tok)[0],
+        "total_cost": total,
     })
+    emit(q, "agent_end", {"agent": "claude"})
 
-    try:
-        clean = full_response.strip().strip("```json").strip("```").strip()
-        return json.loads(clean)
-    except Exception:
-        return {"status": "ask", "thoughts": full_response,
-                "question": "Errore nel formato. Puoi riformulare il task?"}
+    def _parse_claude_json(text: str) -> dict:
+        """Estrae JSON robusto dalla risposta di Claude, gestendo markdown, testo extra e JSON parziale."""
+        import re
+
+        # 1. Prova prima a estrarre da blocco ```json ... ```
+        md_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', text, re.DOTALL)
+        if md_match:
+            try:
+                return json.loads(md_match.group(1))
+            except Exception:
+                pass
+
+        # 2. Prova a trovare il JSON più lungo (primo { all'ultimo })
+        try:
+            start = text.index("{")
+            end = text.rindex("}") + 1
+            candidate = text[start:end]
+            return json.loads(candidate)
+        except Exception:
+            pass
+
+        # 3. Cerca tutti i blocchi {...} e prova ognuno dal più lungo al più corto
+        candidates = re.findall(r"\{[^{}]*(?:\{[^{}]*\}[^{}]*)?\}", text, re.DOTALL)
+        candidates.sort(key=len, reverse=True)
+        for cand in candidates:
+            try:
+                parsed = json.loads(cand)
+                if "status" in parsed:
+                    return parsed
+            except Exception:
+                continue
+
+        # 4. Fallback: inferisci lo status dal testo e costruisci JSON sintetico
+        text_lower = text.lower()
+        if any(w in text_lower for w in ["implementa", "implement", "spec", "specifich"]):
+            return {"status": "implement", "thoughts": text, "spec": text, "gpt_alignment": "ok"}
+        elif any(w in text_lower for w in ["completato", "done", "finito", "corretto", "funziona"]):
+            return {"status": "done", "thoughts": text, "summary": text, "gpt_alignment": "ok"}
+        elif any(w in text_lower for w in ["correggi", "fix", "errore", "problema", "manca"]):
+            return {"status": "fix", "thoughts": text, "feedback": text, "gpt_alignment": "partial"}
+        else:
+            return {"status": "implement", "thoughts": text, "spec": text, "gpt_alignment": "ok"}
+
+    return _parse_claude_json(full_text)
 
 # ─────────────────────────────────────────────
-# STEP 2: IMPLEMENTER
+# FASE 2 — GPT IMPLEMENTER
 # ─────────────────────────────────────────────
-def implement_code(openai_client, session_id, spec, feedback, iteration, model_id, q):
-    emit(q, "agent_start", {
-        "agent": "codex", "phase": "implementing",
-        "model": MODELS[model_id]["label"]
-    })
+def gpt_implement(client: openai.OpenAI, session_id: str, task: str, spec: str,
+                  feedback: str, iteration: int, model_id: str, q: queue.Queue) -> str:
 
-    system = """Sei un ingegnere software esperto. Scrivi codice pulito, funzionale, ben commentato.
-Rispondi con SOLO il codice. Usa commenti per spiegare scelte architetturali importanti.
-Codice production-ready: gestione errori, edge cases, leggibilità."""
+    emit(q, "agent_start", {"agent": "gpt", "label": "GPT", "model": MODELS[model_id]["label"]})
 
-    user_content = f"SPECIFICHE:\n{spec}"
+    system = """Sei GPT, l'Implementer di Ettorino. Il tuo ruolo è:
+1. Implementare ESATTAMENTE le specifiche che ti fornisce Claude
+2. NON aggiungere funzionalità non richieste
+3. NON omettere nulla di ciò che è nelle spec
+4. Scrivere codice pulito, commentato, immediatamente eseguibile
+5. Se le spec sono ambigue, implementa la versione più ragionevole e documentala
+
+Rispondi SOLO con codice Python puro, nessuna spiegazione fuori dal codice.
+Usa commenti inline per spiegare le scelte non ovvie."""
+
+    prompt = f"SPECIFICHE DA IMPLEMENTARE:\n{spec}"
     if feedback:
-        user_content += f"\n\nFEEDBACK DA CORREGGERE:\n{feedback}"
-    if iteration > 1:
-        user_content += f"\n\n[Iterazione #{iteration}]"
+        prompt += f"\n\nFEEDBACK CORRETTIVO DI CLAUDE:\n{feedback}\nCorreggi il codice rispettando questo feedback."
 
     full_code = ""
-    in_tok = estimate_tokens(system + user_content)
-    out_tok = 0
+    input_tok = estimate_tokens(system + prompt)
 
-    try:
-        response = openai_client.chat.completions.create(
+    # o3 non supporta streaming
+    if model_id == "o3":
+        response = client.chat.completions.create(
             model=model_id,
-            messages=[{"role": "system", "content": system},
-                      {"role": "user", "content": user_content}],
-            stream=True
-        )
-        for chunk in response:
-            delta = chunk.choices[0].delta.content or ""
-            if delta:
-                full_code += delta
-                emit(q, "codex_chunk", {"text": delta})
-        out_tok = estimate_tokens(full_code)
-    except Exception:
-        # fallback non-streaming
-        response = openai_client.chat.completions.create(
-            model=model_id,
-            messages=[{"role": "system", "content": system},
-                      {"role": "user", "content": user_content}]
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": prompt}
+            ]
         )
         full_code = response.choices[0].message.content or ""
-        in_tok = response.usage.prompt_tokens
-        out_tok = response.usage.completion_tokens
-        emit(q, "codex_chunk", {"text": full_code})
+        input_tok = response.usage.prompt_tokens
+        output_tok = response.usage.completion_tokens
+        # emetti il codice tutto in una volta
+        emit(q, "agent_chunk", {"agent": "gpt", "text": full_code})
+    else:
+        stream = client.chat.completions.create(
+            model=model_id,
+            max_tokens=3000,
+            stream=True,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": prompt}
+            ]
+        )
+        output_tok = 0
+        for chunk in stream:
+            delta = chunk.choices[0].delta.content or ""
+            full_code += delta
+            output_tok += 1
+            emit(q, "agent_chunk", {"agent": "gpt", "text": delta})
+        input_tok = estimate_tokens(system + prompt)
+        output_tok = estimate_tokens(full_code)
 
-    total = add_cost(session_id, model_id, in_tok, out_tok)
-    filename = WORKSPACE / f"iteration_{iteration}.py"
-    filename.write_text(full_code, encoding="utf-8")
-    emit(q, "file_saved", {"path": str(filename)})
-    emit(q, "agent_end", {"agent": "codex"})
+    total = add_cost(session_id, model_id, input_tok, output_tok)
     emit(q, "cost_update", {
+        "model_id": model_id,
         "model_label": MODELS[model_id]["label"],
-        "input_tokens": in_tok, "output_tokens": out_tok,
-        "call_cost": calc_cost(model_id, in_tok, out_tok),
-        "total_cost": total, "phase": "implementation"
+        "provider": "openai",
+        "input_tokens": input_tok,
+        "output_tokens": output_tok,
+        "call_cost": calc_cost(model_id, input_tok, output_tok)[0],
+        "total_cost": total,
     })
+    emit(q, "agent_end", {"agent": "gpt"})
+
+    # Salva file — nome corto contestuale, non sovrascrive
+    import re as _re, time as _t
+    words = _re.findall(r"[a-zA-Z]+", task)[:3]
+    slug = "_".join(w.lower() for w in words) or "task"
+    path = WORKSPACE / f"{slug}_v{iteration}.py"
+    if path.exists():
+        path = WORKSPACE / f"{slug}_v{iteration}_{int(_t.time()) % 9999}.py"
+    path.write_text(full_code, encoding="utf-8")
+    filename = path
+    emit(q, "file_saved", {"path": str(filename), "iteration": iteration})
+
     return full_code
 
 # ─────────────────────────────────────────────
 # MAIN LOOP
 # ─────────────────────────────────────────────
-def run_agent_loop(session_id, task, q):
+def run_agent_loop(session_id: str, task: str, q: queue.Queue):
     try:
         claude_client = get_anthropic_client()
         openai_client = get_openai_client()
     except ValueError as e:
         emit(q, "error", {"message": str(e)})
-        emit(q, "loop_end", {})
         return
 
-    session_costs[session_id] = {"total": 0.0, "calls": []}
+    session_costs[session_id] = {"total": 0.0, "by_model": {}}
     emit(q, "loop_start", {"task": task})
 
     # ── FASE 0: classifica ──────────────────────
-    cl = classify_task(claude_client, session_id, task, q)
-    difficulty      = cl.get("difficulty", "medium")
-    confidence      = cl.get("confidence", 0.5)
-    reasoning_cl    = cl.get("reasoning", "")
-    est_in          = cl.get("estimated_input_tokens", 1000)
-    est_out         = cl.get("estimated_output_tokens", 2000)
-    needs_q         = cl.get("needs_clarification", False)
-    clarification_q = cl.get("clarification_question")
-    factors         = cl.get("complexity_factors", [])
+    classification = classify_task(claude_client, session_id, task, q)
 
-    tier             = TIER_DEFAULTS[difficulty]
-    reasoner_model   = tier["reasoner"]
-    implementer_model= tier["implementer"]
+    difficulty             = classification.get("difficulty", "medium")
+    suggested_reasoner     = classification.get("suggested_reasoner", TIER_MODELS["medium"]["reasoner"])
+    suggested_implementer  = classification.get("suggested_implementer", TIER_MODELS["medium"]["implementer"])
+    needs_clarification    = classification.get("needs_clarification", False)
+    clarification_question = classification.get("clarification_question")
+    est_cost               = classification.get("estimated_cost_usd", 0.0)
+    reasoning              = classification.get("reasoning", "")
+    model_rationale        = classification.get("model_rationale", "")
+    complexity_factors     = classification.get("complexity_factors", [])
 
-    avg_iters = {"easy": 1, "medium": 2, "hard": 3}[difficulty]
-    estimated_cost = (
-        calc_cost(reasoner_model, est_in, est_out) +
-        calc_cost(implementer_model, est_in, est_out)
-    ) * avg_iters
-
-    emit(q, "classification_result", {
-        "difficulty": difficulty,
-        "confidence": confidence,
-        "reasoning": reasoning_cl,
-        "complexity_factors": factors,
-        "reasoner_model": reasoner_model,
-        "reasoner_label": MODELS[reasoner_model]["label"],
-        "implementer_model": implementer_model,
-        "implementer_label": MODELS[implementer_model]["label"],
-        "estimated_input_tokens": est_in,
-        "estimated_output_tokens": est_out,
-        "estimated_cost": estimated_cost,
-        "tier_label": TIER_LABELS[difficulty],
-        "avg_iterations": avg_iters
-    })
-
-    # ── FASE 0b: chiarimento pre-flight ─────────
-    if needs_q and clarification_q:
+    # Se ha dubbi sul task → chiede prima di proporre i modelli
+    if needs_clarification and clarification_question:
         emit(q, "waiting_human", {
-            "question": f"[Pre-flight] {clarification_q}",
-            "session_id": session_id
+            "question": clarification_question,
+            "session_id": session_id,
+            "context": "clarification"
         })
-        answer = wait_for_human(session_id, timeout=int(os.environ.get("HUMAN_TIMEOUT", 300)))
-        if answer is None:
+        clarification = wait_for_human(session_id, timeout=300)
+        if clarification is None:
             emit(q, "timeout", {})
             return
-        emit(q, "human_response", {"text": answer})
-        task = f"{task}\n\nCHIARIMENTO: {answer}"
+        emit(q, "human_response", {"text": clarification})
+        # Riclassifica con il chiarimento
+        task = f"{task}\n\nChiarimento dell'utente: {clarification}"
+        classification = classify_task(claude_client, session_id, task, q)
+        difficulty             = classification.get("difficulty", "medium")
+        suggested_reasoner     = classification.get("suggested_reasoner", TIER_MODELS[difficulty]["reasoner"])
+        suggested_implementer  = classification.get("suggested_implementer", TIER_MODELS[difficulty]["implementer"])
+        est_cost               = classification.get("estimated_cost_usd", 0.0)
+        reasoning              = classification.get("reasoning", "")
+        model_rationale        = classification.get("model_rationale", "")
 
-    # ── LOOP PRINCIPALE ─────────────────────────
-    context = "Nessun codice ancora prodotto."
+    # ── CONFERMA MODELLI ───────────────────────
+    # Applica eventuali override utente
+    override = model_overrides.get(session_id, {})
+    reasoner_model    = override.get("reasoner", suggested_reasoner)
+    implementer_model = override.get("implementer", suggested_implementer)
+
+    emit(q, "confirm_models", {
+        "session_id":         session_id,
+        "difficulty":         difficulty,
+        "reasoning":          reasoning,
+        "model_rationale":    model_rationale,
+        "complexity_factors": complexity_factors,
+        "reasoner_model":     reasoner_model,
+        "reasoner_label":     MODELS[reasoner_model]["label"],
+        "implementer_model":  implementer_model,
+        "implementer_label":  MODELS[implementer_model]["label"],
+        "estimated_cost":     est_cost,
+        "available_reasoners": [
+            {"id": k, "label": v["label"], "tier": v["tier"]}
+            for k, v in MODELS.items() if v["role"] == "reasoner"
+        ],
+        "available_implementers": [
+            {"id": k, "label": v["label"], "tier": v["tier"]}
+            for k, v in MODELS.items() if v["role"] == "implementer"
+        ],
+    })
+
+    # Aspetta conferma o cambio modelli
+    confirmation = wait_for_human(session_id, timeout=600)
+    if confirmation is None:
+        emit(q, "timeout", {})
+        return
+
+    try:
+        conf_data = json.loads(confirmation)
+        if conf_data.get("action") == "change":
+            reasoner_model    = conf_data.get("reasoner", reasoner_model)
+            implementer_model = conf_data.get("implementer", implementer_model)
+            emit(q, "models_updated", {
+                "reasoner_label":    MODELS[reasoner_model]["label"],
+                "implementer_label": MODELS[implementer_model]["label"],
+            })
+        # se action == "confirm" procediamo con i modelli scelti
+    except Exception:
+        pass  # risposta non JSON → procedi con i modelli suggeriti
+
+    # ── LOOP PRINCIPALE ────────────────────────
+    context = "Nessun codice ancora prodotto. Prima iterazione."
     code = ""
     feedback = ""
     iteration = 0
@@ -348,97 +538,277 @@ def run_agent_loop(session_id, task, q):
 
     while iteration < max_iterations:
         iteration += 1
-        emit(q, "iteration", {"n": iteration})
+        emit(q, "iteration_start", {"n": iteration, "max": max_iterations})
 
-        result = claude_reason(claude_client, session_id, task, context, reasoner_model, q)
+        # Claude ragiona
+        result = claude_reason(claude_client, session_id, task, context,
+                               reasoner_model, iteration, q)
         status = result.get("status", "ask")
+        alignment = result.get("gpt_alignment", "ok")
 
         emit(q, "claude_result", {
-            "status": status,
-            "thoughts": result.get("thoughts", ""),
-            "iteration": iteration
+            "status":    status,
+            "thoughts":  result.get("thoughts", ""),
+            "alignment": alignment,
+            "iteration": iteration,
         })
 
         if status == "done":
             total = session_costs[session_id]["total"]
+            # salva stato per eventuale continuazione
+            session_state[session_id] = {
+                "code": code, "task": task,
+                "reasoner": reasoner_model, "implementer": implementer_model,
+                "iteration": iteration,
+            }
             emit(q, "loop_end", {
-                "success": True,
-                "summary": result.get("summary", ""),
+                "success":    True,
+                "summary":    result.get("summary", ""),
                 "iterations": iteration,
                 "total_cost": total,
-                "calls": session_costs[session_id]["calls"]
+                "by_model":   session_costs[session_id]["by_model"],
             })
-            break
+            return
 
         elif status == "ask":
             emit(q, "waiting_human", {
-                "question": result.get("question", ""),
-                "session_id": session_id
+                "question":   result.get("question", ""),
+                "session_id": session_id,
+                "context":    "loop",
             })
-            answer = wait_for_human(session_id, timeout=int(os.environ.get("HUMAN_TIMEOUT", 300)))
-            if answer is None:
+            human_resp = wait_for_human(session_id, timeout=int(os.environ.get("HUMAN_TIMEOUT", 300)))
+            if human_resp is None:
                 emit(q, "timeout", {})
-                break
-            emit(q, "human_response", {"text": answer})
-            context = f"Codice: {code}\nRisposta: {answer}"
+                return
+            emit(q, "human_response", {"text": human_resp})
+            context = f"Codice attuale:\n{code}\n\nRisposta utente: {human_resp}"
 
         elif status == "implement":
             spec = result.get("spec", "")
             emit(q, "spec_ready", {"spec": spec})
-            code = implement_code(openai_client, session_id, spec, feedback, iteration, implementer_model, q)
-            feedback = ""
-            context = f"Codice iterazione {iteration}:\n```python\n{code}\n```\nVerifica correttezza."
+            code = gpt_implement(openai_client, session_id, task, spec, "",
+                                 iteration, implementer_model, q)
+            context = (f"Codice prodotto (iterazione {iteration}):\n```python\n{code}\n```\n"
+                       "Verifica correttezza e completezza rispetto al task originale.")
 
         elif status == "fix":
             feedback = result.get("feedback", "")
-            emit(q, "fix_needed", {"feedback": feedback})
-            code = implement_code(openai_client, session_id,
-                                  f"Correggi:\n\nCODICE:\n{code}",
-                                  feedback, iteration, implementer_model, q)
-            context = f"Codice corretto iterazione {iteration}:\n```python\n{code}\n```\nVerifica."
+            if alignment == "deviated":
+                emit(q, "gpt_realignment", {"feedback": feedback})
+            else:
+                emit(q, "fix_needed", {"feedback": feedback})
+            code = gpt_implement(openai_client, session_id, task,
+                                 f"Correggi il codice:\n\nCODICE:\n{code}",
+                                 feedback, iteration, implementer_model, q)
+            context = (f"Codice corretto (iterazione {iteration}):\n```python\n{code}\n```\n"
+                       "Verifica di nuovo.")
 
-    if iteration >= max_iterations:
-        total = session_costs[session_id]["total"]
-        emit(q, "loop_end", {
-            "success": False,
-            "message": f"Limite {max_iterations} iterazioni raggiunto",
-            "iterations": iteration,
-            "total_cost": total
-        })
+    # Max iterazioni raggiunto
+    total = session_costs[session_id]["total"]
+    emit(q, "loop_end", {
+        "success":    False,
+        "summary":    f"Raggiunto limite di {max_iterations} iterazioni.",
+        "iterations": iteration,
+        "total_cost": total,
+        "by_model":   session_costs[session_id]["by_model"],
+    })
+
+
+def continue_agent_loop(session_id: str, followup: str, q: queue.Queue):
+    """Riprende il loop: riclassifica il followup, propone modelli, poi esegue."""
+    state = session_state.get(session_id, {})
+    code = state.get("code", "")
+    task = state.get("task", "")
+    prev_reasoner = state.get("reasoner", TIER_MODELS["medium"]["reasoner"])
+    prev_implementer = state.get("implementer", TIER_MODELS["medium"]["implementer"])
+    iteration = state.get("iteration", 0)
+
+    try:
+        claude_client = get_anthropic_client()
+        openai_client = get_openai_client()
+    except ValueError as e:
+        emit(q, "error", {"message": str(e)})
+        return
+
+    combined_task = f"{task} | {followup}"
+    emit(q, "loop_start", {"task": f"[Continuazione] {followup}"})
+
+    # ── FASE 0: riclassifica il followup tenendo conto del codice esistente ──
+    classify_input = (
+        f"TASK ORIGINALE: {task}\n\n"
+        f"CODICE GIÀ PRODOTTO ({len(code)} chars):\n```python\n{code[:800]}{'...' if len(code)>800 else ''}\n```\n\n"
+        f"RICHIESTA DI CONTINUAZIONE: {followup}\n\n"
+        f"Valuta la difficoltà di questa modifica/aggiunta rispetto al codice esistente."
+    )
+    classification = classify_task(claude_client, session_id, classify_input, q)
+
+    difficulty            = classification.get("difficulty", "medium")
+    suggested_reasoner    = classification.get("suggested_reasoner", prev_reasoner)
+    suggested_implementer = classification.get("suggested_implementer", prev_implementer)
+    needs_clarification   = classification.get("needs_clarification", False)
+    clarification_q       = classification.get("clarification_question")
+    est_cost              = classification.get("estimated_cost_usd", 0.0)
+    reasoning             = classification.get("reasoning", "")
+    model_rationale       = classification.get("model_rationale", "")
+    complexity_factors    = classification.get("complexity_factors", [])
+
+    # Chiarimento se necessario
+    if needs_clarification and clarification_q:
+        emit(q, "waiting_human", {"question": clarification_q, "session_id": session_id, "context": "clarification"})
+        clarification = wait_for_human(session_id, timeout=300)
+        if clarification is None:
+            emit(q, "timeout", {})
+            return
+        emit(q, "human_response", {"text": clarification})
+        combined_task += f" | Chiarimento: {clarification}"
+
+    # ── CONFERMA MODELLI ──────────────────────────────────────────────────────
+    override = model_overrides.get(session_id, {})
+    reasoner_model    = override.get("reasoner", suggested_reasoner)
+    implementer_model = override.get("implementer", suggested_implementer)
+
+    emit(q, "confirm_models", {
+        "session_id":         session_id,
+        "difficulty":         difficulty,
+        "reasoning":          reasoning,
+        "model_rationale":    model_rationale,
+        "complexity_factors": complexity_factors,
+        "reasoner_model":     reasoner_model,
+        "reasoner_label":     MODELS[reasoner_model]["label"],
+        "implementer_model":  implementer_model,
+        "implementer_label":  MODELS[implementer_model]["label"],
+        "estimated_cost":     est_cost,
+        "available_reasoners": [
+            {"id": k, "label": v["label"], "tier": v["tier"], "available": v.get("available", True)}
+            for k, v in MODELS.items() if v["role"] == "reasoner"
+        ],
+        "available_implementers": [
+            {"id": k, "label": v["label"], "tier": v["tier"], "available": v.get("available", True)}
+            for k, v in MODELS.items() if v["role"] == "implementer"
+        ],
+    })
+
+    confirmation = wait_for_human(session_id, timeout=600)
+    if confirmation is None:
+        emit(q, "timeout", {})
+        return
+
+    try:
+        conf_data = json.loads(confirmation)
+        if conf_data.get("action") == "change":
+            reasoner_model    = conf_data.get("reasoner", reasoner_model)
+            implementer_model = conf_data.get("implementer", implementer_model)
+            emit(q, "models_updated", {
+                "reasoner_label":    MODELS[reasoner_model]["label"],
+                "implementer_label": MODELS[implementer_model]["label"],
+            })
+    except Exception:
+        pass
+
+    # ── LOOP PRINCIPALE ──────────────────────────────────────────────────────
+    context = (
+        f"CODICE PRODOTTO FINORA:\n```python\n{code}\n```\n\n"
+        f"TASK ORIGINALE: {task}\n\n"
+        f"RICHIESTA DI CONTINUAZIONE: {followup}\n\n"
+        f"Analizza il codice esistente e produci le specifiche per la modifica richiesta."
+    )
+    max_iterations = int(os.environ.get("MAX_ITERATIONS", 10))
+    start_iter = iteration
+
+    while iteration < start_iter + max_iterations:
+        iteration += 1
+        emit(q, "iteration_start", {"n": iteration, "max": start_iter + max_iterations})
+
+        result = claude_reason(claude_client, session_id, combined_task, context,
+                               reasoner_model, iteration, q)
+        status = result.get("status", "ask")
+        alignment = result.get("gpt_alignment", "ok")
+
+        emit(q, "claude_result", {"status": status, "thoughts": result.get("thoughts", ""),
+                                  "alignment": alignment, "iteration": iteration})
+
+        if status == "done":
+            total = session_costs[session_id]["total"]
+            session_state[session_id] = {
+                "code": code, "task": combined_task,
+                "reasoner": reasoner_model, "implementer": implementer_model,
+                "iteration": iteration,
+            }
+            emit(q, "loop_end", {
+                "success": True, "summary": result.get("summary", ""),
+                "iterations": iteration, "total_cost": total,
+                "by_model": session_costs[session_id]["by_model"],
+            })
+            return
+
+        elif status == "ask":
+            emit(q, "waiting_human", {"question": result.get("question", ""),
+                                       "session_id": session_id, "context": "loop"})
+            human_resp = wait_for_human(session_id, timeout=int(os.environ.get("HUMAN_TIMEOUT", 300)))
+            if human_resp is None:
+                emit(q, "timeout", {})
+                return
+            emit(q, "human_response", {"text": human_resp})
+            context = f"Codice attuale:\n{code}\n\nRisposta utente: {human_resp}"
+
+        elif status == "implement":
+            spec = result.get("spec", "")
+            emit(q, "spec_ready", {"spec": spec})
+            code = gpt_implement(openai_client, session_id, combined_task, spec, "",
+                                 iteration, implementer_model, q)
+            context = (f"Codice aggiornato (iterazione {iteration}):\n```python\n{code}\n```\n"
+                       "Verifica correttezza e completezza rispetto a task + continuazione.")
+
+        elif status == "fix":
+            feedback = result.get("feedback", "")
+            if alignment == "deviated":
+                emit(q, "gpt_realignment", {"feedback": feedback})
+            else:
+                emit(q, "fix_needed", {"feedback": feedback})
+            code = gpt_implement(openai_client, session_id, combined_task,
+                                 f"Correggi il codice:\n\nCODICE:\n{code}",
+                                 feedback, iteration, implementer_model, q)
+            context = (f"Codice corretto (iterazione {iteration}):\n```python\n{code}\n```\n"
+                       "Verifica di nuovo.")
+
+    total = session_costs[session_id]["total"]
+    emit(q, "loop_end", {
+        "success": False, "summary": "Raggiunto limite iterazioni.",
+        "iterations": iteration, "total_cost": total,
+        "by_model": session_costs[session_id]["by_model"],
+    })
 
 # ─────────────────────────────────────────────
-human_responses = {}
-human_events = {}
-
-def wait_for_human(session_id, timeout=300):
-    event = threading.Event()
-    human_events[session_id] = event
-    event.wait(timeout=timeout)
-    return human_responses.pop(session_id, None)
-
+# FLASK ROUTES
+# ─────────────────────────────────────────────
 @app.route("/")
 def index():
-    return render_template("index.html")
+    version = os.environ.get("ETTORINO_VERSION", "dev")
+    return render_template("index.html", version=version)
 
-@app.route("/start", methods=["POST"])
-def start():
-    data = request.json
-    task = data.get("task", "").strip()
+@app.route("/run", methods=["POST"])
+def run():
+    data    = request.json or {}
+    task    = (data.get("task") or "").strip()
+    session_id = data.get("session_id") or f"s{int(time.time()*1000)}"
     if not task:
-        return jsonify({"error": "Task vuoto"}), 400
-    session_id = str(int(time.time() * 1000))
+        return jsonify({"error": "task vuoto"}), 400
+
     q = queue.Queue()
     event_queues[session_id] = q
-    threading.Thread(target=run_agent_loop, args=(session_id, task, q), daemon=True).start()
+
+    thread = threading.Thread(target=run_agent_loop, args=(session_id, task, q), daemon=True)
+    thread.start()
+
     return jsonify({"session_id": session_id})
 
 @app.route("/stream/<session_id>")
 def stream(session_id):
+    q = event_queues.get(session_id)
+    if not q:
+        return "Session not found", 404
+
     def generate():
-        q = event_queues.get(session_id)
-        if not q:
-            yield f"data: {json.dumps({'type': 'error', 'data': {'message': 'Sessione non trovata'}})}\n\n"
-            return
         while True:
             try:
                 event = q.get(timeout=30)
@@ -446,21 +816,40 @@ def stream(session_id):
                 if event["type"] in ("loop_end", "error", "timeout"):
                     break
             except queue.Empty:
-                yield f"data: {json.dumps({'type': 'ping'})}\n\n"
-        event_queues.pop(session_id, None)
+                yield "data: {\"type\":\"ping\"}\n\n"
+
     return Response(generate(), mimetype="text/event-stream",
                     headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 @app.route("/respond/<session_id>", methods=["POST"])
 def respond(session_id):
-    data = request.json
+    data = request.json or {}
     human_responses[session_id] = data.get("response", "")
-    ev = human_events.pop(session_id, None)
-    if ev:
-        ev.set()
     return jsonify({"ok": True})
+
+@app.route("/continue", methods=["POST"])
+def continue_run():
+    data = request.json or {}
+    session_id = data.get("session_id", "").strip()
+    followup = (data.get("followup") or "").strip()
+    if not session_id or not followup:
+        return jsonify({"error": "session_id o followup mancante"}), 400
+    if session_id not in session_state:
+        return jsonify({"error": "sessione non trovata o già scaduta"}), 404
+
+    q = queue.Queue()
+    event_queues[session_id] = q
+
+    thread = threading.Thread(target=continue_agent_loop, args=(session_id, followup, q), daemon=True)
+    thread.start()
+
+    return jsonify({"session_id": session_id})
+
+@app.route("/models")
+def models():
+    return jsonify(MODELS)
 
 if __name__ == "__main__":
     port  = int(os.environ.get("FLASK_PORT", 5000))
     debug = os.environ.get("FLASK_DEBUG", "true").lower() == "true"
-    app.run(debug=debug, port=port, threaded=True)
+    app.run(debug=debug, port=port, threaded=True, use_reloader=False)
