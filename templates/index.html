@@ -22,7 +22,7 @@
       transition:height .3s,padding .3s;
     }
     .cost-bar.visible{height:44px;padding:0 1.5rem}
-    .cost-bar.visible .cost-inner{display:flex;align-items:center;gap:16px;width:100%;max-width:600px}
+    .cost-bar.visible .cost-inner{display:flex;align-items:center;gap:16px;width:100%;max-width:860px}
     .cost-inner{display:none}
 
     .cost-cell{
@@ -60,7 +60,7 @@
     .version-badge span{color:#f97316;font-weight:500}
 
     /* ── COMMAND CENTER ── */
-    .command-center{max-width:600px;margin:0 auto 1.5rem;padding:0 1rem}
+    .command-center{max-width:860px;margin:0 auto 1.5rem;padding:0 1.5rem}
     .input-card{background:#fff;border:1px solid #e5e3de;border-radius:16px;padding:1rem 1.2rem .8rem;box-shadow:0 1px 4px rgba(0,0,0,.06)}
     .input-label{font-size:.68rem;letter-spacing:.14em;text-transform:uppercase;color:#aaa;font-family:'DM Mono',monospace;margin-bottom:.5rem}
     textarea{width:100%;border:none;outline:none;resize:none;font-family:'Outfit',sans-serif;font-size:.95rem;color:#1a1744;background:transparent;line-height:1.6;min-height:70px}
@@ -91,11 +91,11 @@
     .stop-fab.visible{display:flex}
 
     /* ── LIVE SECTION ── */
-    .live-section{max-width:600px;margin:0 auto;padding:0 1rem 3rem}
+    .live-section{max-width:860px;margin:0 auto;padding:0 1.5rem 3rem}
     .live-label{font-size:.67rem;letter-spacing:.16em;text-transform:uppercase;color:#bbb;font-family:'DM Mono',monospace;margin-bottom:.9rem;display:flex;align-items:center;gap:6px}
     .live-dot{width:5px;height:5px;border-radius:50%;background:#10b981;animation:pulse 1.4s infinite}
     @keyframes pulse{0%,100%{opacity:.3}50%{opacity:1}}
-    .messages{display:flex;flex-direction:column;gap:10px}
+    .messages{display:flex;flex-direction:column;gap:12px}
 
     /* ── MESSAGE BUBBLES ── */
     .msg{display:flex;gap:10px;opacity:0;transform:translateY(6px);transition:opacity .3s,transform .3s}
@@ -108,7 +108,7 @@
     .avatar.system{background:#f1f5f9;color:#64748b}
     .avatar.user  {background:#1a1744;color:#fff}
 
-    .bubble{background:#fff;border:1px solid #e5e3de;border-radius:12px 12px 12px 3px;padding:.65rem .9rem;font-size:.84rem;line-height:1.55;color:#1a1744;max-width:100%;box-shadow:0 1px 3px rgba(0,0,0,.04);word-break:break-word;overflow-wrap:anywhere}
+    .bubble{background:#fff;border:1px solid #e5e3de;border-radius:12px 12px 12px 3px;padding:.75rem 1.1rem;font-size:.86rem;line-height:1.6;color:#1a1744;max-width:100%;box-shadow:0 1px 3px rgba(0,0,0,.04);word-break:break-word;overflow-wrap:anywhere}
     .bubble.user-bubble{background:#1a1744;color:#fff;border-color:#1a1744;border-radius:12px 12px 3px 12px;margin-left:auto}
 
     .agent-tag{display:inline-flex;align-items:center;gap:4px;font-size:.65rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px;padding:1px 7px;border-radius:999px}
@@ -118,7 +118,7 @@
     .agent-tag.system{background:#f1f5f9;color:#64748b}
 
     .bubble-body{margin-top:2px}
-    .bubble pre{font-family:'DM Mono',monospace;font-size:.75rem;background:#f7f6f2;border-radius:6px;padding:8px 10px;margin-top:6px;overflow-x:auto;display:block;line-height:1.5;color:#1a1744;white-space:pre;max-height:400px;overflow-y:auto}
+    .bubble pre{font-family:'DM Mono',monospace;font-size:.76rem;background:#f7f6f2;border-radius:8px;padding:10px 14px;margin-top:8px;overflow-x:auto;display:block;line-height:1.55;color:#1a1744;white-space:pre;max-height:420px;overflow-y:auto}
     .bubble code{font-family:'DM Mono',monospace;font-size:.75rem;background:#f7f6f2;border-radius:4px;padding:1px 5px;color:#c2410c;white-space:normal}
 
     /* ── Claude thinking progress ── */
@@ -126,6 +126,15 @@
     .claude-progress-bar-wrap{height:3px;background:#ede9fe;border-radius:999px;overflow:hidden;margin-bottom:4px}
     .claude-progress-bar{height:100%;background:linear-gradient(90deg,#7c3aed,#a78bfa);border-radius:999px;width:0%;transition:width .4s ease}
     .claude-progress-bar.indeterminate{width:40%;animation:indeterminate 1.6s ease-in-out infinite}
+
+    /* ── GPT coding progress ── */
+    .gpt-progress{margin-top:6px}
+    .gpt-progress-bar-wrap{height:3px;background:#d1fae5;border-radius:999px;overflow:hidden;margin-bottom:4px}
+    .gpt-progress-bar{height:100%;background:linear-gradient(90deg,#059669,#34d399);border-radius:999px;width:40%;animation:indeterminate 1.2s ease-in-out infinite}
+    .gpt-progress-bar.done{animation:none;width:100%!important}
+    .gpt-progress-label{font-size:.63rem;color:#059669;font-family:'DM Mono',monospace;display:flex;justify-content:space-between}
+    .gpt-download{display:inline-flex;align-items:center;gap:5px;margin-top:5px;font-size:.7rem;color:#059669;font-family:'DM Mono',monospace;text-decoration:none;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:6px;padding:3px 8px;cursor:pointer}
+    .gpt-download:hover{background:#d1fae5}
     @keyframes indeterminate{
       0%{transform:translateX(-100%);width:40%}
       50%{width:60%}
@@ -139,7 +148,7 @@
     @keyframes tdot{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}}
 
     /* ── CONFIRM CARD ── */
-    .confirm-card{background:#fff;border:1.5px solid #e5e3de;border-radius:14px;padding:1.1rem 1.2rem;box-shadow:0 2px 8px rgba(0,0,0,.07);margin:4px 0}
+    .confirm-card{background:#fff;border:1.5px solid #e5e3de;border-radius:14px;padding:1.2rem 1.4rem;box-shadow:0 2px 8px rgba(0,0,0,.07);margin:4px 0}
     .confirm-title{font-size:.7rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:#f97316;margin-bottom:.7rem}
     .confirm-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem}
     .confirm-label{font-size:.78rem;color:#888}
@@ -169,13 +178,65 @@
     .answer-btn{background:#f97316;color:#fff;border:none;border-radius:8px;padding:6px 14px;font-family:'Outfit',sans-serif;font-size:.82rem;font-weight:600;cursor:pointer}
 
     /* ── DONE BANNER ── */
-    .done-banner{background:#ecfdf5;border:1.5px solid #a7f3d0;border-radius:12px;padding:.9rem 1.1rem;margin:8px 0;display:none}
+    .done-banner{background:#ecfdf5;border:1.5px solid #a7f3d0;border-radius:12px;padding:1rem 1.3rem;margin:8px 0;display:none}
     .done-banner.show{display:block}
     .done-banner h3{font-size:.85rem;color:#065f46;margin-bottom:.4rem}
     .done-banner p{font-size:.78rem;color:#047857;line-height:1.5}
     .done-cost{font-family:'DM Mono',monospace;font-size:.7rem;color:#059669;margin-top:.4rem}
 
     .placeholder-msg{text-align:center;color:#ccc;font-size:.82rem;padding:2rem 0;font-family:'DM Mono',monospace}
+
+    /* ── PARALLEL DASHBOARD ── */
+    .parallel-dashboard{
+      background:#fff;border:1.5px solid #e5e3de;border-radius:14px;
+      padding:1rem 1.1rem;margin:6px 0;
+      box-shadow:0 2px 8px rgba(0,0,0,.06);
+    }
+    .parallel-header{
+      display:flex;align-items:center;gap:8px;
+      font-size:.68rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
+      color:#065f46;margin-bottom:.8rem;font-family:'DM Mono',monospace;
+    }
+    .parallel-header .spark{
+      width:8px;height:8px;border-radius:50%;background:#10b981;
+      animation:pulse 1s infinite;flex-shrink:0;
+    }
+    .parallel-workers{display:flex;gap:10px;}
+    .worker-card{
+      flex:1;border:1px solid #e5e3de;border-radius:10px;
+      padding:.7rem .8rem;min-width:0;
+      transition:border-color .3s,box-shadow .3s;
+    }
+    .worker-card.running{border-color:#059669;box-shadow:0 0 0 2px rgba(5,150,105,.12);}
+    .worker-card.done   {border-color:#a7f3d0;background:#f0fdf4;}
+    .worker-card.error  {border-color:#fca5a5;background:#fff5f5;}
+    .worker-card.waiting{opacity:.7;}
+    .worker-id{
+      font-size:.6rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
+      font-family:'DM Mono',monospace;color:#888;margin-bottom:3px;
+    }
+    .worker-title{
+      font-size:.78rem;font-weight:600;color:#1a1744;
+      white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+      margin-bottom:.4rem;line-height:1.3;
+    }
+    .worker-status{
+      font-size:.68rem;font-family:'DM Mono',monospace;
+      display:flex;align-items:center;gap:5px;
+    }
+    .worker-dot{width:5px;height:5px;border-radius:50%;flex-shrink:0;}
+    .worker-dot.waiting {background:#ccc;}
+    .worker-dot.running {background:#059669;animation:pulse .8s infinite;}
+    .worker-dot.done    {background:#059669;}
+    .worker-dot.error   {background:#dc2626;}
+    .worker-bar-wrap{height:2px;background:#f0f0f0;border-radius:999px;margin-top:.5rem;overflow:hidden;}
+    .worker-bar{height:100%;border-radius:999px;width:0%;transition:width .5s ease;}
+    .worker-bar.running{background:#059669;animation:indeterminate 1.4s ease-in-out infinite;}
+    .worker-bar.done   {background:#059669;width:100%!important;animation:none;}
+    .worker-bar.error  {background:#dc2626;width:100%!important;animation:none;}
+    .worker-lines{
+      font-size:.63rem;color:#aaa;font-family:'DM Mono',monospace;margin-top:3px;
+    }
 
     /* alignment warning */
     .alignment-warn{display:inline-flex;align-items:center;gap:4px;background:#fff7ed;border:1px solid #fed7aa;border-radius:999px;padding:2px 8px;font-size:.65rem;color:#c2410c;font-weight:600;margin-bottom:4px}
@@ -350,6 +411,7 @@ var currentStreamTokens = 0;
 var currentProgressEl = null;
 var currentProgressBar = null;
 var currentProgressLabel = null;
+var lastSavedPath = null;   // path of last workspace project for download link
 
 function startStreamBubble(agentKey, modelLabel){
   var parts = createMsg(agentKey);
@@ -372,7 +434,7 @@ function startStreamBubble(agentKey, modelLabel){
   currentProgressBar = null;
   currentProgressLabel = null;
 
-  // For Claude: add progress bar
+  // For Claude: purple thinking progress bar
   if(agentKey === 'claude'){
     var prog = document.createElement('div');
     prog.className = 'claude-progress';
@@ -390,6 +452,26 @@ function startStreamBubble(agentKey, modelLabel){
     currentProgressEl = prog;
     currentProgressBar = bar;
     currentProgressLabel = label.querySelector('#tok-count');
+  }
+  // For GPT: green coding progress bar — hide code, show progress
+  if(agentKey === 'gpt'){
+    body.style.display = 'none'; // hide code body
+    var gprog = document.createElement('div');
+    gprog.className = 'gpt-progress';
+    var gbarWrap = document.createElement('div');
+    gbarWrap.className = 'gpt-progress-bar-wrap';
+    var gbar = document.createElement('div');
+    gbar.className = 'gpt-progress-bar';
+    gbarWrap.appendChild(gbar);
+    var glabel = document.createElement('div');
+    glabel.className = 'gpt-progress-label';
+    glabel.innerHTML = '<span>scrivendo codice...</span><span id="gpt-tok-count">0 tok · 0 righe</span>';
+    gprog.appendChild(gbarWrap);
+    gprog.appendChild(glabel);
+    body.parentNode.insertBefore(gprog, body.nextSibling);
+    currentProgressEl = gprog;
+    currentProgressBar = gbar;
+    currentProgressLabel = glabel.querySelector('#gpt-tok-count');
   }
 
   return body;
@@ -452,26 +534,61 @@ function appendStream(text){
     } else {
       html = null;
     }
+  } else if(currentStreamAgent === 'gpt'){
+    // GPT: update progress label only, don't render code
+    if(currentProgressLabel){
+      var lines = (currentStreamText.match(/\n/g) || []).length;
+      currentProgressLabel.textContent = currentStreamTokens + ' tok · ' + lines + ' righe';
+    }
+    html = null; // keep body hidden
   } else {
     html = renderText(currentStreamText);
   }
-  currentStreamBody.innerHTML = html || '<div class="typing"><span></span><span></span><span></span></div>';
+  if(currentStreamAgent === 'gpt'){
+    // don't touch body for GPT
+  } else {
+    currentStreamBody.innerHTML = html || '<div class="typing"><span></span><span></span><span></span></div>';
+  }
   scrollFeed();
 }
 
 function endStream(){
-  // Complete the progress bar then fade it out
   if(currentProgressBar){
     currentProgressBar.classList.remove('indeterminate');
+    currentProgressBar.classList.add('done');
     currentProgressBar.style.width = '100%';
-    var el = currentProgressEl;
-    setTimeout(function(){
-      if(el && el.parentNode){
-        el.style.transition = 'opacity .5s';
-        el.style.opacity = '0';
-        setTimeout(function(){ if(el && el.parentNode) el.parentNode.removeChild(el); }, 500);
+    currentProgressBar.style.animation = 'none';
+
+    if(currentStreamAgent === 'gpt'){
+      // GPT: keep bar visible, add download link if we have a saved path
+      var lines = (currentStreamText.match(/\n/g) || []).length;
+      if(currentProgressLabel){
+        currentProgressLabel.textContent = '✓ ' + currentStreamTokens + ' tok · ' + lines + ' righe';
       }
-    }, 600);
+      if(lastSavedPath && currentProgressEl){
+        var dl = document.createElement('a');
+        dl.className = 'gpt-download';
+        dl.href = '/download?path=' + encodeURIComponent(lastSavedPath);
+        dl.target = '_blank';
+        dl.innerHTML = '⬇ Scarica file generati';
+        currentProgressEl.appendChild(dl);
+      }
+      // Don't fade GPT bar
+    } else {
+      // Claude: fade out
+      var el = currentProgressEl;
+      setTimeout(function(){
+        if(el && el.parentNode){
+          el.style.transition = 'opacity .5s';
+          el.style.opacity = '0';
+          setTimeout(function(){ if(el && el.parentNode) el.parentNode.removeChild(el); }, 500);
+        }
+      }, 600);
+    }
+  }
+  // Restore GPT body visibility (was hidden during streaming)
+  if(currentStreamAgent === 'gpt' && currentStreamBody){
+    currentStreamBody.style.display = '';
   }
   currentStreamBody = null;
   currentStreamText = '';
@@ -677,6 +794,91 @@ async function startRun(){
   };
 }
 
+// ── Parallel Dashboard ────────────────────
+var parallelDashEl = null;
+
+function showParallelDashboard(chunks){
+  removePlaceholder();
+  var wrapper = document.createElement('div');
+  wrapper.className = 'msg show';
+  wrapper.style.flexDirection = 'column';
+
+  var av = document.createElement('div');
+  av.className = 'avatar gpt';
+  av.textContent = 'G';
+  av.style.flexShrink = '0';
+
+  var dash = document.createElement('div');
+  dash.className = 'parallel-dashboard';
+  dash.style.flex = '1';
+  dash.style.minWidth = '0';
+
+  dash.innerHTML =
+    '<div class="parallel-header"><div class="spark"></div>⚡ ' + chunks.length + ' worker GPT in parallelo</div>' +
+    '<div class="parallel-workers" id="parallelWorkers"></div>';
+
+  var workersEl = dash.querySelector('#parallelWorkers');
+  chunks.forEach(function(ch){
+    var card = document.createElement('div');
+    card.className = 'worker-card waiting';
+    card.id = 'worker-' + ch.id;
+    card.innerHTML =
+      '<div class="worker-id">Worker ' + ch.id + '</div>' +
+      '<div class="worker-title">' + ch.title + '</div>' +
+      '<div class="worker-status"><div class="worker-dot waiting" id="wdot-' + ch.id + '"></div>' +
+      '<span id="wstat-' + ch.id + '" style="color:#aaa">in attesa...</span></div>' +
+      '<div class="worker-bar-wrap"><div class="worker-bar waiting" id="wbar-' + ch.id + '"></div></div>' +
+      '<div class="worker-lines" id="wlines-' + ch.id + '"></div>';
+    workersEl.appendChild(card);
+  });
+
+  var msgRow = document.createElement('div');
+  msgRow.style.cssText = 'display:flex;gap:10px;width:100%';
+  msgRow.appendChild(av);
+  msgRow.appendChild(dash);
+
+  wrapper.appendChild(msgRow);
+  document.getElementById('messages').appendChild(wrapper);
+  parallelDashEl = dash;
+  scrollFeed();
+}
+
+function updateWorker(chunkId, state, statusText, lines){
+  var card = document.getElementById('worker-' + chunkId);
+  var dot  = document.getElementById('wdot-' + chunkId);
+  var stat = document.getElementById('wstat-' + chunkId);
+  var bar  = document.getElementById('wbar-' + chunkId);
+  var linesEl = document.getElementById('wlines-' + chunkId);
+  if(!card) return;
+
+  card.className = 'worker-card ' + state;
+  dot.className  = 'worker-dot ' + state;
+  bar.className  = 'worker-bar ' + state;
+
+  var colors = {running:'#059669', done:'#065f46', error:'#dc2626', waiting:'#aaa'};
+  stat.style.color = colors[state] || '#aaa';
+  stat.textContent = statusText;
+
+  if(lines > 0){
+    linesEl.textContent = lines + ' righe prodotte';
+  }
+  scrollFeed();
+}
+
+function finalizeParallelDashboard(completed, failed){
+  if(!parallelDashEl) return;
+  var header = parallelDashEl.querySelector('.parallel-header');
+  if(header){
+    header.innerHTML =
+      '<div class="spark" style="background:#f97316;animation:none"></div>' +
+      '✓ Parallelo completato — ' + completed.length + '/' + (completed.length + failed.length) + ' chunk';
+    header.style.color = '#f97316';
+  }
+  var spark = parallelDashEl.querySelector('.spark');
+  if(spark) spark.style.animation = 'none';
+  parallelDashEl = null;
+}
+
 // ── Event handler ──────────────────────────
 function handleEvent(type, d){
   switch(type){
@@ -746,15 +948,49 @@ function handleEvent(type, d){
       // spec mostrata nel stream claude_result
       break;
 
+    case 'parallel_start':
+      showParallelDashboard(d.chunks);
+      break;
+
+    case 'parallel_chunk_start':
+      // Pre-emitted: show as queued/waiting initially
+      // Will switch to running when first data arrives (continuation event repurposed)
+      updateWorker(d.chunk_id, 'waiting', 'in coda...', 0);
+      break;
+
+    case 'parallel_chunk_running':
+      updateWorker(d.chunk_id, 'running', 'elaborando...', 0);
+      break;
+
+    case 'parallel_chunk_continuation':
+      updateWorker(d.chunk_id, 'running', 'continuo (tent. ' + d.attempt + ')...', 0);
+      break;
+
+    case 'parallel_chunk_done':
+      updateWorker(d.chunk_id, 'done', '✓ ' + d.lines + ' righe', d.lines);
+      break;
+
+    case 'parallel_chunk_error':
+      updateWorker(d.chunk_id, 'error', '✗ ' + d.error, 0);
+      break;
+
+    case 'parallel_end': {
+      finalizeParallelDashboard(d.completed, d.failed);
+      var failNote = d.failed.length ? ' · ' + d.failed.length + ' falliti' : '';
+      addSimpleMsg('system', '🏁 ' + d.completed.length + ' worker completati' + failNote + ' — Claude ora integra...');
+      break;
+    }
+
     case 'file_saved':
+      lastSavedPath = d.path;
       if(d.multi_file && d.files && d.files.length > 1){
         const fileList = d.files.map(f => {
-          const parts = f.replace(/\\/g,'/').split('/');
+          const fp = f.split('\\').join('/'); const parts = fp.split('/');
           return '<code>' + parts.slice(-2).join('/') + '</code>';
         }).join(', ');
-        addSimpleMsg('system', '📁 Progetto salvato in <code>' + d.path.replace(/\\/g,'/').split('/').pop() + '/</code> — ' + d.files.length + ' file: ' + fileList);
+        addSimpleMsg('system', '📁 Progetto salvato in <code>' + d.path.split('\\').join('/').split('/').pop() + '/</code> — ' + d.files.length + ' file: ' + fileList);
       } else {
-        const fname = (d.files && d.files[0]) ? d.files[0].replace(/\\/g,'/').split('/').pop() : d.path;
+        const fname = (d.files && d.files[0]) ? d.files[0].split('\\').join('/').split('/').pop() : d.path;
         addSimpleMsg('system', '💾 Salvato: <code>' + fname + '</code>');
       }
       break;

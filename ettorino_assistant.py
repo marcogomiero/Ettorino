@@ -3,6 +3,7 @@ import json
 import time
 import threading
 import queue
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from flask import Flask, render_template, request, Response, jsonify
 import anthropic
@@ -260,20 +261,37 @@ Quando scrivi le spec per GPT sii MOLTO specifico:
 - Formato dell'output atteso
 
 Se GPT ha prodotto codice che non soddisfa le spec, indica ESATTAMENTE cosa correggere.
-IMPORTANTE: Se il codice termina bruscamente a metà (troncato), NON mandare status "fix".
-Invece usa status "ask" con question "Il codice sembra troncato — GPT deve continuare?" oppure
-valuta il codice parziale e fornisci spec per i file mancanti rimanenti.
+IMPORTANTE — output troncato: Se un file termina bruscamente, NON mandare status "fix" per troncamento.
+Valuta il codice parziale: se il chunk è abbastanza completo da funzionare, dichiaralo OK.
+
+REVIEW PARALLELA: Quando ricevi codice da chunk multipli (=== CHUNK A ===, === CHUNK B ===, ecc.):
+1. Leggi TUTTI i chunk prima di decidere
+2. Verifica import incrociati: se chunk A importa da chunk B, controlla che B esporti quella cosa
+3. Verifica naming: stesse variabili/classi chiamate uguale in tutti i chunk
+4. Se tutto coerente → status "done"
+5. Se ci sono problemi specifici → status "fix" con feedback che indica QUALE chunk correggere e COSA
 
 Rispondi SOLO con JSON valido:
 {
-  "status": "implement|fix|ask|done",
+  "status": "implement|implement_parallel|fix|ask|done",
   "thoughts": "il tuo ragionamento interno (visibile all'utente)",
-  "spec": "specifiche dettagliate per GPT (solo se status=implement)",
+  "spec": "specifiche dettagliate per GPT (solo se status=implement, singolo chunk)",
+  "parallel_chunks": [
+    {"id": "A", "title": "titolo feature A", "spec": "spec dettagliata per GPT worker 1"},
+    {"id": "B", "title": "titolo feature B", "spec": "spec dettagliata per GPT worker 2"},
+    {"id": "C", "title": "titolo feature C", "spec": "spec dettagliata per GPT worker 3"}
+  ],
   "feedback": "feedback correttivo preciso per GPT (solo se status=fix)",
   "question": "domanda per l'utente (solo se status=ask)",
   "summary": "riepilogo finale (solo se status=done)",
   "gpt_alignment": "valutazione se GPT ha seguito le spec: ok|deviated|partial"
-}"""
+}
+
+USA implement_parallel quando:
+- Il task ha 3+ componenti/file chiaramente separabili e indipendenti
+- Difficoltà hard o hard-mid
+- I chunk possono essere implementati in parallelo senza dipendenze circolari
+Specifica in ogni chunk quali interfacce/funzioni gli altri chunk devono aspettarsi."""
 
     user_content = f"""TASK ORIGINALE:
 {task}
@@ -561,6 +579,211 @@ molto spazio, produci un file alla volta in modo completo prima di passare al su
 
     return full_code
 
+
+# ─────────────────────────────────────────────
+# PARALLEL GPT IMPLEMENTATION
+# ─────────────────────────────────────────────
+def gpt_implement_parallel(client: openai.OpenAI, session_id: str, task: str,
+                           chunks: list, iteration: int, model_id: str,
+                           q: queue.Queue) -> dict:
+    """
+    Lancia N GPT worker in parallelo (uno per chunk), poi restituisce
+    un dict {chunk_id: code}.
+    """
+    MAX_WORKERS = 3
+    chunk_results = {}
+    chunk_errors  = {}
+
+    # Costruisci contesto condiviso: ogni worker sa cosa faranno gli altri
+    shared_context = "\n".join(
+        f"- Chunk {ch['id']} ({ch['title']}): implementato da un altro worker in parallelo"
+        for ch in chunks
+    )
+
+    def run_chunk(chunk):
+        cid   = chunk["id"]
+        title = chunk["title"]
+        spec  = chunk["spec"]
+
+        # parallel_chunk_start already emitted synchronously before thread launch
+        emit(q, "parallel_chunk_running", {"chunk_id": cid})
+        system = (
+            "Sei GPT, implementer parallelo di Ettorino.\n"
+            "Stai implementando UN SOLO chunk di un progetto più grande.\n"
+            "Altri worker stanno implementando gli altri chunk in parallelo.\n\n"
+            "FORMATO OUTPUT — OBBLIGATORIO:\n"
+            "Usa SEMPRE questo formato per ogni file:\n"
+            "### FILE: percorso/relativo/file.py\n"
+            "(codice completo)\n\n"
+            "CONTESTO PROGETTO — gli altri chunk in parallelo:\n"
+            + shared_context +
+            "\n\nOgni file deve essere COMPLETO. Non troncare mai il codice."
+        )
+        prompt = f"TASK ORIGINALE: {task}\n\nIL TUO CHUNK — {title}:\n{spec}"
+
+        tier    = MODELS.get(model_id, {}).get("tier", "hard")
+        max_tok = {"easy": 4000, "medium": 8000, "hard": 16000, "hard-mid": 12000}.get(tier, 8000)
+
+        full_code = ""
+        truncated = False
+
+        try:
+            if model_id == "o3":
+                resp = client.chat.completions.create(
+                    model=model_id,
+                    max_completion_tokens=max_tok,
+                    messages=[
+                        {"role": "system", "content": system},
+                        {"role": "user",   "content": prompt},
+                    ]
+                )
+                full_code     = resp.choices[0].message.content or ""
+                truncated     = resp.choices[0].finish_reason == "length"
+                input_tok_c   = resp.usage.prompt_tokens
+                output_tok_c  = resp.usage.completion_tokens
+            else:
+                stream = client.chat.completions.create(
+                    model=model_id,
+                    max_tokens=max_tok,
+                    stream=True,
+                    stream_options={"include_usage": True},
+                    messages=[
+                        {"role": "system", "content": system},
+                        {"role": "user",   "content": prompt},
+                    ]
+                )
+                last_finish = None
+                input_tok_c = output_tok_c = 0
+                for chunk_ev in stream:
+                    if chunk_ev.choices:
+                        delta = chunk_ev.choices[0].delta.content or ""
+                        full_code += delta
+                        if chunk_ev.choices[0].finish_reason:
+                            last_finish = chunk_ev.choices[0].finish_reason
+                    if hasattr(chunk_ev, "usage") and chunk_ev.usage:
+                        input_tok_c  = chunk_ev.usage.prompt_tokens
+                        output_tok_c = chunk_ev.usage.completion_tokens
+                truncated = (last_finish == "length")
+
+            # Auto-continuazione se troncato
+            MAX_CONT = 2
+            cont = 0
+            while truncated and cont < MAX_CONT:
+                cont += 1
+                emit(q, "parallel_chunk_continuation", {"chunk_id": cid, "attempt": cont})
+                cont_msgs = [
+                    {"role": "system",    "content": system},
+                    {"role": "user",      "content": prompt},
+                    {"role": "assistant", "content": full_code},
+                    {"role": "user",      "content": "Continua esattamente da dove ti sei fermato."},
+                ]
+                if model_id == "o3":
+                    cr = client.chat.completions.create(
+                        model=model_id, max_completion_tokens=max_tok, messages=cont_msgs)
+                    full_code += cr.choices[0].message.content or ""
+                    truncated  = cr.choices[0].finish_reason == "length"
+                    input_tok_c  += cr.usage.prompt_tokens
+                    output_tok_c += cr.usage.completion_tokens
+                else:
+                    cs = client.chat.completions.create(
+                        model=model_id, max_tokens=max_tok, stream=True,
+                        stream_options={"include_usage": True}, messages=cont_msgs)
+                    last_finish = None
+                    for cev in cs:
+                        if cev.choices:
+                            full_code += cev.choices[0].delta.content or ""
+                            if cev.choices[0].finish_reason:
+                                last_finish = cev.choices[0].finish_reason
+                        if hasattr(cev, "usage") and cev.usage:
+                            input_tok_c  += cev.usage.prompt_tokens
+                            output_tok_c += cev.usage.completion_tokens
+                    truncated = (last_finish == "length")
+
+            add_cost(session_id, model_id, input_tok_c, output_tok_c)
+            emit(q, "cost_update", {
+                "model_id":    model_id,
+                "model_label": MODELS[model_id]["label"],
+                "provider":    "openai",
+                "input_tokens":  input_tok_c,
+                "output_tokens": output_tok_c,
+                "call_cost":     calc_cost(model_id, input_tok_c, output_tok_c)[0],
+                "total_cost":    session_costs[session_id]["total"],
+            })
+            emit(q, "parallel_chunk_done", {"chunk_id": cid, "title": title, "lines": full_code.count("\n")})
+            return cid, full_code, None
+
+        except Exception as e:
+            emit(q, "parallel_chunk_error", {"chunk_id": cid, "error": str(e)})
+            return cid, "", str(e)
+
+    # Lancia i worker in parallelo (può essere chiamato più volte nel loop)
+    emit(q, "parallel_start", {
+        "chunks": [{"id": ch["id"], "title": ch["title"]} for ch in chunks],
+        "workers": min(MAX_WORKERS, len(chunks))
+    })
+    time.sleep(0.3)  # lascia tempo al frontend di renderizzare la dashboard
+
+    # Pre-emit all chunk_start events synchronously so dashboard shows all workers as "waiting"
+    for ch in chunks:
+        emit(q, "parallel_chunk_start", {"chunk_id": ch["id"], "title": ch["title"]})
+    time.sleep(0.2)
+
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        futures = {executor.submit(run_chunk, ch): ch["id"] for ch in chunks}
+        for future in as_completed(futures):
+            cid, code, err = future.result()
+            if err:
+                chunk_errors[cid] = err
+            else:
+                chunk_results[cid] = code
+
+    emit(q, "parallel_end", {
+        "completed": list(chunk_results.keys()),
+        "failed":    list(chunk_errors.keys()),
+    })
+
+    # Salva i file di ogni chunk nel workspace
+    import re as _re
+    words = _re.findall(r"[a-zA-Z]+", task)[:3]
+    slug  = "_".join(w.lower() for w in words) or "task"
+    proj_dir = WORKSPACE / slug
+    proj_dir.mkdir(parents=True, exist_ok=True)
+
+    all_saved = []
+    for cid in sorted(chunk_results.keys()):
+        chunk_code = chunk_results[cid]
+        # Try multiple FILE header patterns GPT might use
+        file_blocks = _re.findall(
+            r"###\s*FILE\s*(?:\d+\s*)?[:\-]?\s*([\w./\-]+\.\w+)\s*\n([\s\S]*?)(?=###\s*FILE|$)",
+            chunk_code
+        )
+        if not file_blocks:
+            # Try without the \n separator (some models don't add newline)
+            file_blocks = _re.findall(
+                r"###\s*FILE\s*(?:\d+\s*)?[:\-]?\s*([\w./\-]+\.\w+)\s*([\s\S]*?)(?=###\s*FILE|$)",
+                chunk_code
+            )
+        if file_blocks:
+            for rel_path, content in file_blocks:
+                dest = proj_dir / rel_path.strip().lstrip("/")
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_text(content.strip(), encoding="utf-8")
+                all_saved.append(str(dest))
+        else:
+            dest = proj_dir / f"chunk_{cid}_v{iteration}.py"
+            dest.write_text(chunk_code, encoding="utf-8")
+            all_saved.append(str(dest))
+
+    if all_saved:
+        emit(q, "file_saved", {
+            "path": str(proj_dir),
+            "files": all_saved,
+            "multi_file": len(all_saved) > 1,
+            "iteration": iteration,
+        })
+
+    return chunk_results
+
 # ─────────────────────────────────────────────
 # MAIN LOOP
 # ─────────────────────────────────────────────
@@ -725,6 +948,71 @@ def run_agent_loop(session_id: str, task: str, q: queue.Queue):
                                  iteration, implementer_model, q)
             context = (f"Codice prodotto (iterazione {iteration}):\n```python\n{code}\n```\n"
                        "Verifica correttezza e completezza rispetto al task originale.")
+
+        elif status == "implement_parallel":
+            chunks = result.get("parallel_chunks", [])
+            if not chunks or len(chunks) < 2:
+                # fallback a implement normale se chunks mancanti
+                spec = result.get("spec", "") or "Implementa il task come specificato."
+                emit(q, "spec_ready", {"spec": spec})
+                code = gpt_implement(openai_client, session_id, task, spec, "",
+                                     iteration, implementer_model, q)
+            else:
+                chunk_results = gpt_implement_parallel(
+                    openai_client, session_id, task, chunks, iteration, implementer_model, q
+                )
+                # Combina tutti i chunk per il contesto di review
+                combined = "\n\n".join(
+                    f"=== CHUNK {cid} ===\n{chunk_results[cid]}"
+                    for cid in sorted(chunk_results.keys())
+                    if chunk_results.get(cid)
+                )
+                code = combined
+
+            # Costruisci contesto completo per Claude Integrator
+            # Usa un approccio strutturato: sommario + codice chunk per chunk
+            if chunk_results:
+                # Sommario strutturato: file prodotti da ogni chunk
+                import re as _re2
+                chunk_summaries = []
+                for cid in sorted(chunk_results.keys()):
+                    chunk_code = chunk_results.get(cid, "")
+                    files_in_chunk = _re2.findall(
+                        r"###\s*FILE\s*[:\-]?\s*([\w./\-]+\.\w+)",
+                        chunk_code
+                    )
+                    lines_count = chunk_code.count("\n")
+                    summary = f"Chunk {cid}: {len(files_in_chunk)} file, {lines_count} righe"
+                    if files_in_chunk:
+                        summary += " — " + ", ".join(files_in_chunk[:8])
+                        if len(files_in_chunk) > 8:
+                            summary += f" (+{len(files_in_chunk)-8} altri)"
+                    chunk_summaries.append(summary)
+
+                # Contesto completo ma gestibile:
+                # - Sommario in cima
+                # - Poi ogni chunk separato (Claude può leggere tutto)
+                context_parts = [
+                    f"Codice prodotto in parallelo (iterazione {iteration}):",
+                    f"SOMMARIO CHUNK:\n" + "\n".join(chunk_summaries),
+                    "\nCODICE COMPLETO PER CHUNK:",
+                ]
+                for cid in sorted(chunk_results.keys()):
+                    chunk_code = chunk_results.get(cid, "")
+                    context_parts.append(
+                        f"\n=== CHUNK {cid} ({len(chunk_code)} chars) ===\n{chunk_code}"
+                    )
+                context_parts.append(
+                    "\nVerifica: 1) ogni file è completo, 2) import incrociati corretti, "
+                    "3) naming consistency, 4) interfacce compatibili tra chunk. "
+                    "Se tutto OK → status done. Se ci sono problemi → status fix con feedback specifico."
+                )
+                context = "\n".join(context_parts)
+            else:
+                context = (
+                    f"Codice prodotto (iterazione {iteration}):\n```python\n{code}\n```\n"
+                    "Verifica correttezza e completezza rispetto al task originale."
+                )
 
         elif status == "fix":
             feedback = result.get("feedback", "")
@@ -994,6 +1282,36 @@ def stop(session_id):
     # also push a sentinel to unblock any wait_for_human
     human_responses[session_id] = "__stop__"
     return jsonify({"ok": True})
+
+@app.route("/download")
+def download():
+    """Serve la cartella del progetto come ZIP scaricabile."""
+    import zipfile, io
+    path_str = request.args.get("path", "").strip()
+    if not path_str:
+        return "path mancante", 400
+    proj_path = Path(path_str)
+    if not proj_path.exists() or not proj_path.is_dir():
+        # Try as relative to WORKSPACE
+        proj_path = WORKSPACE / path_str
+    if not proj_path.exists():
+        return "path non trovato", 404
+    # Security check: must be inside WORKSPACE
+    try:
+        proj_path.resolve().relative_to(WORKSPACE.resolve())
+    except ValueError:
+        return "path non autorizzato", 403
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for f in proj_path.rglob("*"):
+            if f.is_file():
+                zf.write(f, f.relative_to(proj_path.parent))
+    buf.seek(0)
+    zip_name = proj_path.name + ".zip"
+    from flask import send_file
+    return send_file(buf, mimetype="application/zip",
+                     as_attachment=True, download_name=zip_name)
 
 @app.route("/models")
 def models():
