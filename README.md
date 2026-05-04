@@ -1,133 +1,187 @@
-# 🤖 Ettorino
+# Ettorino 🟠
 
-> Assistente agente multimodale per la costruzione di progetti software.
-> Loop autonomo **Claude × GPT** con router intelligente di difficoltà e stima costi live.
+**An AI agent that thinks, plans and builds software — in parallel.**
 
----
-
-## Cosa fa
-
-Ettorino prende un task in linguaggio naturale e lo esegue autonomamente attraverso un loop agente:
-
-1. **Classifica** la difficoltà del task (easy / medium / hard)
-2. **Seleziona** i modelli AI più adatti al tier — più semplice il task, meno si spende
-3. **Ragiona** sul problema e produce specifiche tecniche (Claude)
-4. **Implementa** il codice dalle specifiche (GPT)
-5. **Verifica** il codice e itera fino a che non è corretto
-6. **Chiede** chiarimenti all'utente se ha dubbi, senza bloccarsi
-
-Tutto visibile in tempo reale nell'interfaccia web, con stima e conteggio dei costi live.
+Claude reasons. GPT implements. Ettorino orchestrates everything.
 
 ---
 
-## Struttura del progetto
+## What happens when you run a task
 
 ```
-ettorino/
-├── ettorino_assistant.py   ← backend Flask + motore agente
-├── templates/
-│   └── index.html          ← interfaccia web (feed live + costi)
-├── workspace/              ← codice generato sessione per sessione
-├── .env                    ← chiavi API e configurazione (da compilare)
-├── .gitignore              ← esclude .env e workspace da git
-├── README.md               ← questo file
-└── docs/
-    └── API_KEYS.md         ← guida completa per ottenere le API key
+You →  "Build a web application monitoring system with daemon process,
+        SQLite storage, Flask REST API, email alerts and YAML config"
+
+         ┌─────────────────────────────────────────────────────┐
+         │                     ETTORINO                        │
+         │                                                     │
+         │  1. Router classifies → HARD                        │
+         │  2. Proposes models + cost estimate → you confirm   │
+         │                                                     │
+         │  3. Claude Opus 4.7 (Architect)                     │
+         │     "Splitting into 3 parallelizable chunks..."     │
+         │                                                     │
+         │  ┌──────────┐  ┌──────────┐  ┌──────────┐         │
+         │  │ GPT-4.1  │  │ GPT-4.1  │  │ GPT-4.1  │         │
+         │  │ Chunk A  │  │ Chunk B  │  │ Chunk C  │         │
+         │  │config+db │  │monitor+  │  │api+daemon│         │
+         │  │          │  │alerter   │  │          │         │
+         │  └────┬─────┘  └────┬─────┘  └────┬─────┘         │
+         │       └─────────────┴─────────────┘               │
+         │                     │                              │
+         │  4. Claude Integrator checks coherence             │
+         │     imports, naming, interfaces → ✓ done           │
+         └─────────────────────────────────────────────────────┘
+
+→  workspace/build_a_web_application/   (8 files ready)
+   webmon/__init__.py
+   webmon/config.py
+   webmon/database.py
+   webmon/monitor.py
+   webmon/alerter.py
+   webmon/api.py
+   webmon/daemon.py
+   config.example.yaml
 ```
 
 ---
 
-## Installazione
+## Features
 
-### 1. Prerequisiti
+| | |
+|---|---|
+| 🧠 **Smart router** | Classifies every task (easy/medium/hard) and selects optimal models for quality/cost |
+| ⚡ **Parallel implementation** | On hard tasks, 3 GPT workers run simultaneously on independent chunks |
+| 💬 **Conversational loop** | Claude asks for clarification when needed, without blocking |
+| 🔄 **Continue the conversation** | After completion, request changes — restarts with fresh classification |
+| 🛑 **Stop anytime** | Fixed floating button, interrupts the loop without losing context |
+| 💰 **Real-time cost tracking** | Tokens and dollars per model, updated live during execution |
+| 📁 **Multi-file structure** | Code saved in the exact folder structure planned by Claude |
+| ⬇️ **Direct download** | Download the project as a `.zip` at the end of each run |
+| 🔁 **Auto-continuation** | If GPT output is truncated, it resumes automatically from where it left off |
 
-- **Python 3.10+** → scarica da [python.org](https://www.python.org/downloads/)
-- Connessione internet
-- Un account su Anthropic e uno su OpenAI (vedi [`docs/API_KEYS.md`](docs/API_KEYS.md))
+---
 
-### 2. Dipendenze Python
+## Models
+
+| Tier | Reasoner | Implementer | When |
+|------|----------|-------------|------|
+| 🟢 **Easy** | Claude Haiku 4.5 | GPT-4.1 mini | Scripts, utilities, single functions |
+| 🟡 **Medium** | Claude Sonnet 4.6 | GPT-4.1 | Multi-component apps, APIs, 100–500 lines |
+| 🟠 **Hard-mid** | Claude Opus 4.6 | o3 | Complex systems, multi-file architectures |
+| 🔴 **Hard** | Claude Opus 4.7 | o3 | Very complex systems, ML/AI, 600+ lines |
+
+The classifier always uses **Claude Sonnet 4.6** regardless of tier (cost < $0.01).
+
+---
+
+## Estimated costs
+
+| Task | Cost |
+|------|------|
+| "Write a Python function that..." | ~$0.002 |
+| "Build a CLI with 4 commands..." | ~$0.05–0.15 |
+| "Multi-component monitoring system..." | ~$0.50–2.00 |
+| "3-worker parallel system, hard task" | ~$1.50–4.00 |
+
+---
+
+## Installation
+
+**Prerequisites:** Python 3.10+, Anthropic and OpenAI API keys
 
 ```bash
+# 1. Install dependencies
 pip install flask anthropic openai python-dotenv
-```
 
-### 3. Configurazione API key
+# 2. Set your keys in .env
+ANTHROPIC_API_KEY=sk-ant-...
+OPENAI_API_KEY=sk-...
+ETTORINO_VERSION=0.1.0
 
-Apri il file `.env` nella cartella e sostituisci i placeholder con le tue chiavi reali:
-
-```env
-ANTHROPIC_API_KEY=sk-ant-...    ← la tua chiave Anthropic
-OPENAI_API_KEY=sk-...           ← la tua chiave OpenAI
-```
-
-> Non sai come ottenerle? Leggi la guida completa → [`docs/API_KEYS.md`](docs/API_KEYS.md)
-
-### 4. Avvio
-
-```bash
-cd ettorino
+# 3. Run
 python ettorino_assistant.py
 ```
 
-Apri il browser su **http://localhost:5000**
+Open **http://localhost:5000** — Ettorino does the rest.
 
 ---
 
-## Come si usa
+## Project structure
 
-1. Scrivi il task nella textarea a sinistra (in italiano o inglese va bene)
-2. Clicca **AVVIA LOOP**
-3. Ettorino classifica il task e mostra tier, modelli scelti e stima del costo
-4. Segui il feed live a destra: i pensieri di Claude e il codice di GPT appaiono in streaming
-5. Se Claude ha bisogno di chiarimenti, compare un box giallo — rispondi e il loop riparte
-6. Il codice finale è salvato in `workspace/iteration_N.py`
-
----
-
-## Router di difficoltà
-
-| Tier      | Reasoner            | Implementer  | Quando                                       |
-|-----------|---------------------|--------------|----------------------------------------------|
-| 🟢 Easy   | Claude Haiku 4.5    | GPT-4o mini  | Script semplici, utility, < 100 righe        |
-| 🟡 Medium | Claude Sonnet 4.5   | GPT-4o       | App multi-componente, API, 100–500 righe     |
-| 🔴 Hard   | Claude Opus 4.5     | o3           | Sistemi complessi, ML/AI, > 500 righe        |
-
-La classificazione usa sempre **Claude Haiku** (costo < $0.001) indipendentemente dal tier scelto.
+```
+ettorino/
+├── ettorino_assistant.py   ← Flask backend + agent engine + parallel loop
+├── templates/
+│   └── index.html          ← UI with live streaming, progress bars, parallel dashboard
+├── workspace/              ← generated projects, organized by task
+│   └── build_a_web_/
+│       ├── webmon/
+│       └── config.yaml
+├── .env                    ← keys and configuration (do not commit)
+└── .gitignore
+```
 
 ---
 
-## Costi indicativi
+## Configuration (.env)
 
-| Complessità | Costo per task completo |
-|-------------|------------------------|
-| 🟢 Easy     | ~$0.001 – $0.01        |
-| 🟡 Medium   | ~$0.05 – $0.20         |
-| 🔴 Hard     | ~$0.50 – $2.00         |
+```env
+# Required
+ANTHROPIC_API_KEY=sk-ant-...
+OPENAI_API_KEY=sk-...
 
-I costi sono visibili in tempo reale nel pannello sinistro dell'interfaccia.
-
----
-
-## Opzioni di configurazione (.env)
-
-| Variabile          | Default | Descrizione                                      |
-|--------------------|---------|--------------------------------------------------|
-| `ANTHROPIC_API_KEY`| —       | Chiave API Anthropic (obbligatoria)              |
-| `OPENAI_API_KEY`   | —       | Chiave API OpenAI (obbligatoria)                 |
-| `FLASK_PORT`       | `5000`  | Porta su cui gira l'interfaccia web              |
-| `FLASK_DEBUG`      | `true`  | Modalità debug Flask (metti `false` in produzione) |
-| `MAX_ITERATIONS`   | `10`    | Numero massimo di iterazioni del loop            |
-| `HUMAN_TIMEOUT`    | `300`   | Secondi di attesa risposta utente prima del timeout |
+# Optional
+ETTORINO_VERSION=0.1.0    # shown in the UI
+FLASK_PORT=5000
+FLASK_DEBUG=true
+MAX_ITERATIONS=10          # max loop iterations per task
+HUMAN_TIMEOUT=300          # seconds before timeout on user response
+```
 
 ---
 
-## Note tecniche
+## Internal architecture
 
-- Il codice generato si accumula in `workspace/` — puliscila manualmente quando vuoi
-- Per aggiornare i prezzi dei modelli, modifica il dizionario `MODELS` in `ettorino_assistant.py`
-- Flask gira in modalità **threaded** per gestire SSE e richieste in parallelo
-- Per deploy in produzione usa un server WSGI come `gunicorn`:
-  ```bash
-  pip install gunicorn
-  gunicorn -w 1 --threads 4 ettorino_assistant:app
-  ```
+```
+POST /run
+  │
+  ├── classify_task()           Claude Sonnet 4.6 → easy/medium/hard-mid/hard
+  │
+  ├── [model confirm UI]        user can swap models before the loop starts
+  │
+  └── run_agent_loop()
+        │
+        ├── claude_reason()     Claude streams reasoning (only "thoughts" shown in UI)
+        │     │
+        │     ├── implement          → gpt_implement() sequential
+        │     ├── implement_parallel → gpt_implement_parallel() × 3 workers
+        │     ├── fix               → gpt_implement() with corrective feedback
+        │     ├── ask               → waits for user input via SSE
+        │     └── done              → saves state, emits loop_end
+        │
+        └── [continue?]         /continue → reclassifies + new model confirm card
+```
+
+All events travel over **Server-Sent Events (SSE)** — no polling, no websockets.
+
+---
+
+## Production
+
+```bash
+pip install gunicorn
+gunicorn -w 1 --threads 8 ettorino_assistant:app
+```
+
+> `-w 1` is intentional: the agent loop uses in-memory state per session. Multiple workers = isolated sessions.
+
+---
+
+## Roadmap
+
+- [ ] GPT-5 support when available via standard API
+- [ ] Automatic quality/cost benchmark per task
+- [ ] Session persistence on Redis
+- [ ] One-click deploy on Railway / Render
+- [ ] Plugin system for external tools (browser, terminal, git)
