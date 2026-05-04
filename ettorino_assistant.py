@@ -260,6 +260,9 @@ Quando scrivi le spec per GPT sii MOLTO specifico:
 - Formato dell'output atteso
 
 Se GPT ha prodotto codice che non soddisfa le spec, indica ESATTAMENTE cosa correggere.
+IMPORTANTE: Se il codice termina bruscamente a metà (troncato), NON mandare status "fix".
+Invece usa status "ask" con question "Il codice sembra troncato — GPT deve continuare?" oppure
+valuta il codice parziale e fornisci spec per i file mancanti rimanenti.
 
 Rispondi SOLO con JSON valido:
 {
@@ -286,7 +289,7 @@ Analizza, ragiona e decidi il prossimo passo."""
 
     with client.messages.stream(
         model=model_id,
-        max_tokens=2000,
+        max_tokens=4000,
         system=system,
         messages=[{"role": "user", "content": user_content}]
     ) as stream:
@@ -361,6 +364,11 @@ Analizza, ragiona e decidi il prossimo passo."""
 def gpt_implement(client: openai.OpenAI, session_id: str, task: str, spec: str,
                   feedback: str, iteration: int, model_id: str, q: queue.Queue) -> str:
 
+    # Se il modello non è disponibile → fallback a gpt-4.1
+    if not MODELS.get(model_id, {}).get("available", True):
+        emit(q, "agent_chunk", {"agent": "gpt", "text": f"⚠ {MODELS[model_id]['label']} non disponibile — fallback a gpt-4.1"})
+        model_id = "gpt-4.1"
+
     emit(q, "agent_start", {"agent": "gpt", "label": "GPT", "model": MODELS[model_id]["label"]})
 
     system = """Sei GPT, l'Implementer di Ettorino. Il tuo ruolo è:
@@ -388,47 +396,117 @@ import yaml
 ...
 
 Se il progetto è un singolo file, scrivi solo il codice Python puro senza intestazione FILE.
-Ogni file deve essere COMPLETO e funzionante. Non troncare mai il codice."""
+Ogni file deve essere COMPLETO e funzionante. Non troncare MAI il codice — se hai bisogno di
+molto spazio, produci un file alla volta in modo completo prima di passare al successivo."""
 
     prompt = f"SPECIFICHE DA IMPLEMENTARE:\n{spec}"
     if feedback:
         prompt += f"\n\nFEEDBACK CORRETTIVO DI CLAUDE:\n{feedback}\nCorreggi il codice rispettando questo feedback."
 
+    # max_tokens per tier: hard = 16k, medium = 8k, easy = 4k
+    tier = MODELS.get(model_id, {}).get("tier", "medium")
+    max_tok_map = {"easy": 4000, "medium": 8000, "hard": 16000, "hard-mid": 12000}
+    max_tok = max_tok_map.get(tier, 8000)
+
     full_code = ""
+    truncated = False
     input_tok = estimate_tokens(system + prompt)
 
     # o3 non supporta streaming
     if model_id == "o3":
         response = client.chat.completions.create(
             model=model_id,
+            max_completion_tokens=max_tok,
             messages=[
                 {"role": "system", "content": system},
                 {"role": "user", "content": prompt}
             ]
         )
         full_code = response.choices[0].message.content or ""
+        finish_reason = response.choices[0].finish_reason
+        truncated = (finish_reason == "length")
         input_tok = response.usage.prompt_tokens
         output_tok = response.usage.completion_tokens
-        # emetti il codice tutto in una volta
         emit(q, "agent_chunk", {"agent": "gpt", "text": full_code})
     else:
         stream = client.chat.completions.create(
             model=model_id,
-            max_tokens=3000,
+            max_tokens=max_tok,
             stream=True,
+            stream_options={"include_usage": True},
             messages=[
                 {"role": "system", "content": system},
                 {"role": "user", "content": prompt}
             ]
         )
         output_tok = 0
+        last_finish_reason = None
         for chunk in stream:
-            delta = chunk.choices[0].delta.content or ""
-            full_code += delta
-            output_tok += 1
-            emit(q, "agent_chunk", {"agent": "gpt", "text": delta})
-        input_tok = estimate_tokens(system + prompt)
-        output_tok = estimate_tokens(full_code)
+            if chunk.choices:
+                delta = chunk.choices[0].delta.content or ""
+                full_code += delta
+                output_tok += 1
+                if delta:
+                    emit(q, "agent_chunk", {"agent": "gpt", "text": delta})
+                if chunk.choices[0].finish_reason:
+                    last_finish_reason = chunk.choices[0].finish_reason
+            # usage chunk (last chunk)
+            if hasattr(chunk, "usage") and chunk.usage:
+                input_tok = chunk.usage.prompt_tokens
+                output_tok = chunk.usage.completion_tokens
+        truncated = (last_finish_reason == "length")
+        if input_tok == estimate_tokens(system + prompt):
+            output_tok = estimate_tokens(full_code)
+
+    # Se troncato: chiedi a GPT di continuare dal punto in cui si è fermato
+    MAX_CONTINUATIONS = 3
+    continuations = 0
+    while truncated and continuations < MAX_CONTINUATIONS:
+        continuations += 1
+        emit(q, "agent_chunk", {"agent": "gpt", "text": f"\n\n[⚠ output troncato — continuo ({continuations}/{MAX_CONTINUATIONS})...]\n"})
+        cont_messages = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": prompt},
+            {"role": "assistant", "content": full_code},
+            {"role": "user", "content": "Continua esattamente da dove ti sei fermato. Non ripetere il codice già scritto."}
+        ]
+        if model_id == "o3":
+            cont_resp = client.chat.completions.create(
+                model=model_id,
+                max_completion_tokens=max_tok,
+                messages=cont_messages
+            )
+            cont_text = cont_resp.choices[0].message.content or ""
+            truncated = (cont_resp.choices[0].finish_reason == "length")
+            input_tok += cont_resp.usage.prompt_tokens
+            output_tok += cont_resp.usage.completion_tokens
+        else:
+            cont_stream = client.chat.completions.create(
+                model=model_id,
+                max_tokens=max_tok,
+                stream=True,
+                stream_options={"include_usage": True},
+                messages=cont_messages
+            )
+            cont_text = ""
+            last_finish_reason = None
+            for chunk in cont_stream:
+                if chunk.choices:
+                    delta = chunk.choices[0].delta.content or ""
+                    cont_text += delta
+                    if delta:
+                        emit(q, "agent_chunk", {"agent": "gpt", "text": delta})
+                    if chunk.choices[0].finish_reason:
+                        last_finish_reason = chunk.choices[0].finish_reason
+                if hasattr(chunk, "usage") and chunk.usage:
+                    input_tok += chunk.usage.prompt_tokens
+                    output_tok += chunk.usage.completion_tokens
+            truncated = (last_finish_reason == "length")
+        full_code += cont_text
+        add_cost(session_id, model_id, 0, 0)  # cost already tracked above
+
+    if truncated:
+        emit(q, "agent_chunk", {"agent": "gpt", "text": "\n\n[⚠ raggiunto limite massimo continuazioni — il codice potrebbe essere incompleto]"})
 
     total = add_cost(session_id, model_id, input_tok, output_tok)
     emit(q, "cost_update", {
