@@ -29,11 +29,11 @@ WORKSPACE.mkdir(exist_ok=True)
 # prezzi in $ per milione di token
 # ─────────────────────────────────────────────
 MODELS = {
-    # Anthropic
+    # Anthropic — dual role (reasoner OR implementer)
     "claude-haiku-4-5": {
         "provider": "anthropic",
         "label": "Claude Haiku 4.5",
-        "role": "reasoner",
+        "role": ["reasoner", "implementer"],
         "tier": "easy",
         "input_cost": 1.00,
         "output_cost": 5.00,
@@ -41,7 +41,7 @@ MODELS = {
     "claude-sonnet-4-6": {
         "provider": "anthropic",
         "label": "Claude Sonnet 4.6",
-        "role": "reasoner",
+        "role": ["reasoner", "implementer"],
         "tier": "medium",
         "input_cost": 3.00,
         "output_cost": 15.00,
@@ -49,7 +49,7 @@ MODELS = {
     "claude-opus-4-7": {
         "provider": "anthropic",
         "label": "Claude Opus 4.7",
-        "role": "reasoner",
+        "role": ["reasoner", "implementer"],
         "tier": "hard",
         "input_cost": 5.00,
         "output_cost": 25.00,
@@ -57,16 +57,16 @@ MODELS = {
     "claude-opus-4-6": {
         "provider": "anthropic",
         "label": "Claude Opus 4.6",
-        "role": "reasoner",
+        "role": ["reasoner", "implementer"],
         "tier": "hard-mid",
         "input_cost": 5.00,
         "output_cost": 25.00,
     },
-    # OpenAI
+    # OpenAI — implementer only
     "gpt-4.1-mini": {
         "provider": "openai",
         "label": "GPT-4.1 mini",
-        "role": "implementer",
+        "role": ["implementer"],
         "tier": "easy",
         "input_cost": 0.40,
         "output_cost": 1.60,
@@ -74,7 +74,7 @@ MODELS = {
     "gpt-4.1": {
         "provider": "openai",
         "label": "GPT-4.1",
-        "role": "implementer",
+        "role": ["implementer"],
         "tier": "medium",
         "input_cost": 2.00,
         "output_cost": 8.00,
@@ -82,7 +82,7 @@ MODELS = {
     "o3": {
         "provider": "openai",
         "label": "o3",
-        "role": "implementer",
+        "role": ["implementer"],
         "tier": "hard",
         "input_cost": 15.00,
         "output_cost": 60.00,
@@ -165,10 +165,12 @@ def wait_for_human(session_id: str, timeout: int = 300) -> str | None:
 # FASE 0 — CLASSIFIER
 # Usa sempre Sonnet per la classificazione: abbastanza smart, non troppo caro
 # ─────────────────────────────────────────────
-CLASSIFIER_MODEL = "claude-sonnet-4-6"
+CLASSIFIER_MODEL = "claude-haiku-4-5"
 
-def classify_task(client: anthropic.Anthropic, session_id: str, task: str, q: queue.Queue) -> dict:
-    emit(q, "agent_start", {"agent": "router", "label": "Router"})
+def classify_task(client: anthropic.Anthropic, session_id: str, task: str, q: queue.Queue, silent: bool = False) -> dict:
+    if not silent:
+        emit(q, "agent_start", {"agent": "router", "label": "Router"})
+        emit(q, "agent_chunk", {"agent": "router", "text": "Analizzo il task..."})
 
     system = """Sei il router intelligente di Ettorino, un assistente agente Claude×GPT.
 Il tuo compito è analizzare il task dell'utente e decidere:
@@ -202,8 +204,6 @@ Rispondi SOLO con JSON valido, nessun testo fuori:
   "complexity_factors": ["fattore1", "fattore2"]
 }"""
 
-    emit(q, "agent_chunk", {"agent": "router", "text": "Analizzo il task..."})
-
     response = client.messages.create(
         model=CLASSIFIER_MODEL,
         max_tokens=600,
@@ -235,7 +235,8 @@ Rispondi SOLO con JSON valido, nessun testo fuori:
                   "suggested_implementer": "gpt-4.1",
                   "needs_clarification": False}
 
-    emit(q, "agent_end", {"agent": "router"})
+    if not silent:
+        emit(q, "agent_end", {"agent": "router"})
     return result
 
 # ─────────────────────────────────────────────
@@ -270,6 +271,10 @@ REVIEW PARALLELA: Quando ricevi codice da chunk multipli (=== CHUNK A ===, === C
 3. Verifica naming: stesse variabili/classi chiamate uguale in tutti i chunk
 4. Se tutto coerente → status "done"
 5. Se ci sono problemi specifici → status "fix" con feedback che indica QUALE chunk correggere e COSA
+
+FILE NEL WORKSPACE: Se nel contesto vedi "FILE GIÀ PRESENTI NEL WORKSPACE", quei file esistono
+già su disco con il loro contenuto completo. NON chiedere all'utente di fornirli, NON usare
+status "ask" per ottenerli — sono già disponibili. Valuta il codice che hai nel contesto.
 
 Rispondi SOLO con JSON valido:
 {
@@ -390,18 +395,25 @@ Analizza, ragiona e decidi il prossimo passo."""
 # ─────────────────────────────────────────────
 # FASE 2 — GPT IMPLEMENTER
 # ─────────────────────────────────────────────
-def gpt_implement(client: openai.OpenAI, session_id: str, task: str, spec: str,
-                  feedback: str, iteration: int, model_id: str, q: queue.Queue) -> str:
+def run_implementer(anthropic_client: anthropic.Anthropic, openai_client: openai.OpenAI,
+                    session_id: str, task: str, spec: str,
+                    feedback: str, iteration: int, model_id: str, q: queue.Queue) -> str:
+    """Implementer unificato: usa Claude o GPT a seconda del provider del modello scelto."""
 
-    # Se il modello non è disponibile → fallback a gpt-4.1
+    provider = MODELS.get(model_id, {}).get("provider", "openai")
+
+    # Fallback se modello non disponibile
     if not MODELS.get(model_id, {}).get("available", True):
-        emit(q, "agent_chunk", {"agent": "gpt", "text": f"⚠ {MODELS[model_id]['label']} non disponibile — fallback a gpt-4.1"})
-        model_id = "gpt-4.1"
+        fallback = "gpt-4.1" if provider == "openai" else "claude-sonnet-4-6"
+        emit(q, "agent_chunk", {"agent": "gpt", "text": f"⚠ {MODELS[model_id]['label']} non disponibile — fallback a {fallback}"})
+        model_id = fallback
+        provider = MODELS[model_id]["provider"]
 
-    emit(q, "agent_start", {"agent": "gpt", "label": "GPT", "model": MODELS[model_id]["label"]})
+    agent_key = "claude" if provider == "anthropic" else "gpt"
+    emit(q, "agent_start", {"agent": agent_key, "label": "Implementer", "model": MODELS[model_id]["label"]})
 
-    system = """Sei GPT, l'Implementer di Ettorino. Il tuo ruolo è:
-1. Implementare ESATTAMENTE le specifiche che ti fornisce Claude
+    system = """Sei l'Implementer di Ettorino. Il tuo ruolo è:
+1. Implementare ESATTAMENTE le specifiche che ti fornisce il Reasoner
 2. NON aggiungere funzionalità non richieste
 3. NON omettere nulla di ciò che è nelle spec
 4. Scrivere codice pulito, commentato, immediatamente eseguibile
@@ -430,9 +442,8 @@ molto spazio, produci un file alla volta in modo completo prima di passare al su
 
     prompt = f"SPECIFICHE DA IMPLEMENTARE:\n{spec}"
     if feedback:
-        prompt += f"\n\nFEEDBACK CORRETTIVO DI CLAUDE:\n{feedback}\nCorreggi il codice rispettando questo feedback."
+        prompt += f"\n\nFEEDBACK CORRETTIVO:\n{feedback}\nCorreggi il codice rispettando questo feedback."
 
-    # max_tokens per tier: hard = 16k, medium = 8k, easy = 4k
     tier = MODELS.get(model_id, {}).get("tier", "medium")
     max_tok_map = {"easy": 4000, "medium": 8000, "hard": 16000, "hard-mid": 12000}
     max_tok = max_tok_map.get(tier, 8000)
@@ -440,133 +451,159 @@ molto spazio, produci un file alla volta in modo completo prima di passare al su
     full_code = ""
     truncated = False
     input_tok = estimate_tokens(system + prompt)
+    output_tok = 0
 
-    # o3 non supporta streaming
-    if model_id == "o3":
-        response = client.chat.completions.create(
-            model=model_id,
-            max_completion_tokens=max_tok,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": prompt}
-            ]
-        )
-        full_code = response.choices[0].message.content or ""
-        finish_reason = response.choices[0].finish_reason
-        truncated = (finish_reason == "length")
-        input_tok = response.usage.prompt_tokens
-        output_tok = response.usage.completion_tokens
-        emit(q, "agent_chunk", {"agent": "gpt", "text": full_code})
-    else:
-        stream = client.chat.completions.create(
+    if provider == "anthropic":
+        # ── Claude implementer ──────────────────────────────────────────────
+        with anthropic_client.messages.stream(
             model=model_id,
             max_tokens=max_tok,
-            stream=True,
-            stream_options={"include_usage": True},
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": prompt}
-            ]
-        )
-        output_tok = 0
-        last_finish_reason = None
-        for chunk in stream:
-            if chunk.choices:
-                delta = chunk.choices[0].delta.content or ""
-                full_code += delta
-                output_tok += 1
-                if delta:
-                    emit(q, "agent_chunk", {"agent": "gpt", "text": delta})
-                if chunk.choices[0].finish_reason:
-                    last_finish_reason = chunk.choices[0].finish_reason
-            # usage chunk (last chunk)
-            if hasattr(chunk, "usage") and chunk.usage:
-                input_tok = chunk.usage.prompt_tokens
-                output_tok = chunk.usage.completion_tokens
-        truncated = (last_finish_reason == "length")
-        if input_tok == estimate_tokens(system + prompt):
-            output_tok = estimate_tokens(full_code)
+            system=system,
+            messages=[{"role": "user", "content": prompt}]
+        ) as stream:
+            for text in stream.text_stream:
+                full_code += text
+                emit(q, "agent_chunk", {"agent": agent_key, "text": text})
+            final_msg = stream.get_final_message()
+            input_tok = final_msg.usage.input_tokens
+            output_tok = final_msg.usage.output_tokens
+            truncated = (final_msg.stop_reason == "max_tokens")
 
-    # Se troncato: chiedi a GPT di continuare dal punto in cui si è fermato
-    MAX_CONTINUATIONS = 3
-    continuations = 0
-    while truncated and continuations < MAX_CONTINUATIONS:
-        continuations += 1
-        emit(q, "agent_chunk", {"agent": "gpt", "text": f"\n\n[⚠ output troncato — continuo ({continuations}/{MAX_CONTINUATIONS})...]\n"})
-        cont_messages = [
-            {"role": "system", "content": system},
-            {"role": "user", "content": prompt},
-            {"role": "assistant", "content": full_code},
-            {"role": "user", "content": "Continua esattamente da dove ti sei fermato. Non ripetere il codice già scritto."}
-        ]
+        # Auto-continuazione se troncato
+        MAX_CONTINUATIONS = 3
+        cont = 0
+        while truncated and cont < MAX_CONTINUATIONS:
+            cont += 1
+            emit(q, "agent_chunk", {"agent": agent_key, "text": f"\n\n[⚠ output troncato — continuo ({cont}/{MAX_CONTINUATIONS})...]\n"})
+            with anthropic_client.messages.stream(
+                model=model_id,
+                max_tokens=max_tok,
+                system=system,
+                messages=[
+                    {"role": "user", "content": prompt},
+                    {"role": "assistant", "content": full_code},
+                    {"role": "user", "content": "Continua esattamente da dove ti sei fermato. Non ripetere il codice già scritto."},
+                ]
+            ) as cont_stream:
+                cont_text = ""
+                for text in cont_stream.text_stream:
+                    cont_text += text
+                    emit(q, "agent_chunk", {"agent": agent_key, "text": text})
+                final_cont = cont_stream.get_final_message()
+                input_tok += final_cont.usage.input_tokens
+                output_tok += final_cont.usage.output_tokens
+                truncated = (final_cont.stop_reason == "max_tokens")
+            full_code += cont_text
+
+    else:
+        # ── OpenAI implementer (logica originale) ───────────────────────────
         if model_id == "o3":
-            cont_resp = client.chat.completions.create(
+            response = openai_client.chat.completions.create(
                 model=model_id,
                 max_completion_tokens=max_tok,
-                messages=cont_messages
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": prompt}
+                ]
             )
-            cont_text = cont_resp.choices[0].message.content or ""
-            truncated = (cont_resp.choices[0].finish_reason == "length")
-            input_tok += cont_resp.usage.prompt_tokens
-            output_tok += cont_resp.usage.completion_tokens
+            full_code = response.choices[0].message.content or ""
+            truncated = (response.choices[0].finish_reason == "length")
+            input_tok = response.usage.prompt_tokens
+            output_tok = response.usage.completion_tokens
+            emit(q, "agent_chunk", {"agent": agent_key, "text": full_code})
         else:
-            cont_stream = client.chat.completions.create(
+            stream = openai_client.chat.completions.create(
                 model=model_id,
                 max_tokens=max_tok,
                 stream=True,
                 stream_options={"include_usage": True},
-                messages=cont_messages
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": prompt}
+                ]
             )
-            cont_text = ""
             last_finish_reason = None
-            for chunk in cont_stream:
+            for chunk in stream:
                 if chunk.choices:
                     delta = chunk.choices[0].delta.content or ""
-                    cont_text += delta
+                    full_code += delta
+                    output_tok += 1
                     if delta:
-                        emit(q, "agent_chunk", {"agent": "gpt", "text": delta})
+                        emit(q, "agent_chunk", {"agent": agent_key, "text": delta})
                     if chunk.choices[0].finish_reason:
                         last_finish_reason = chunk.choices[0].finish_reason
                 if hasattr(chunk, "usage") and chunk.usage:
-                    input_tok += chunk.usage.prompt_tokens
-                    output_tok += chunk.usage.completion_tokens
+                    input_tok = chunk.usage.prompt_tokens
+                    output_tok = chunk.usage.completion_tokens
             truncated = (last_finish_reason == "length")
-        full_code += cont_text
-        add_cost(session_id, model_id, 0, 0)  # cost already tracked above
+
+        # Auto-continuazione OpenAI
+        MAX_CONTINUATIONS = 3
+        cont = 0
+        while truncated and cont < MAX_CONTINUATIONS:
+            cont += 1
+            emit(q, "agent_chunk", {"agent": agent_key, "text": f"\n\n[⚠ output troncato — continuo ({cont}/{MAX_CONTINUATIONS})...]\n"})
+            cont_messages = [
+                {"role": "system", "content": system},
+                {"role": "user", "content": prompt},
+                {"role": "assistant", "content": full_code},
+                {"role": "user", "content": "Continua esattamente da dove ti sei fermato. Non ripetere il codice già scritto."}
+            ]
+            if model_id == "o3":
+                cr = openai_client.chat.completions.create(
+                    model=model_id, max_completion_tokens=max_tok, messages=cont_messages)
+                full_code += cr.choices[0].message.content or ""
+                truncated = (cr.choices[0].finish_reason == "length")
+                input_tok += cr.usage.prompt_tokens
+                output_tok += cr.usage.completion_tokens
+            else:
+                cs = openai_client.chat.completions.create(
+                    model=model_id, max_tokens=max_tok, stream=True,
+                    stream_options={"include_usage": True}, messages=cont_messages)
+                cont_text = ""
+                last_finish_reason = None
+                for cev in cs:
+                    if cev.choices:
+                        delta = cev.choices[0].delta.content or ""
+                        cont_text += delta
+                        if delta:
+                            emit(q, "agent_chunk", {"agent": agent_key, "text": delta})
+                        if cev.choices[0].finish_reason:
+                            last_finish_reason = cev.choices[0].finish_reason
+                    if hasattr(cev, "usage") and cev.usage:
+                        input_tok += cev.usage.prompt_tokens
+                        output_tok += cev.usage.completion_tokens
+                truncated = (last_finish_reason == "length")
+                full_code += cont_text
 
     if truncated:
-        emit(q, "agent_chunk", {"agent": "gpt", "text": "\n\n[⚠ raggiunto limite massimo continuazioni — il codice potrebbe essere incompleto]"})
+        emit(q, "agent_chunk", {"agent": agent_key, "text": "\n\n[⚠ raggiunto limite massimo continuazioni — il codice potrebbe essere incompleto]"})
 
     total = add_cost(session_id, model_id, input_tok, output_tok)
     emit(q, "cost_update", {
         "model_id": model_id,
         "model_label": MODELS[model_id]["label"],
-        "provider": "openai",
+        "provider": provider,
         "input_tokens": input_tok,
         "output_tokens": output_tok,
         "call_cost": calc_cost(model_id, input_tok, output_tok)[0],
         "total_cost": total,
     })
-    emit(q, "agent_end", {"agent": "gpt"})
+    emit(q, "agent_end", {"agent": agent_key})
 
-    # ── Salva output di GPT ──────────────────────────────────────────────────
+    # ── Salva output ────────────────────────────────────────────────────────
     import re as _re, time as _t
-
-    # Cartella del progetto: prime 3 parole del task come slug
     words = _re.findall(r"[a-zA-Z]+", task)[:3]
     slug  = "_".join(w.lower() for w in words) or "task"
     proj_dir = WORKSPACE / slug
     proj_dir.mkdir(parents=True, exist_ok=True)
 
-    # Prova a estrarre blocchi ### FILE: path/to/file.ext ... (codice) dalla risposta
     file_blocks = _re.findall(
         r"###\s*FILE\s*(?:\d+\s*)?[:\-]?\s*([\w./\-]+\.\w+)\s*\n([\s\S]*?)(?=###\s*FILE|$)",
         full_code
     )
-
     saved_paths = []
     if file_blocks:
-        # GPT ha prodotto output multi-file strutturato
         for rel_path, content in file_blocks:
             rel_path = rel_path.strip().lstrip("/")
             dest = proj_dir / rel_path
@@ -574,7 +611,6 @@ molto spazio, produci un file alla volta in modo completo prima di passare al su
             dest.write_text(content.strip(), encoding="utf-8")
             saved_paths.append(str(dest))
     else:
-        # Output singolo file — salva come v{N}.py nella cartella progetto
         dest = proj_dir / f"v{iteration}.py"
         if dest.exists():
             dest = proj_dir / f"v{iteration}_{int(_t.time()) % 9999}.py"
@@ -592,20 +628,21 @@ molto spazio, produci un file alla volta in modo completo prima di passare al su
 
 
 # ─────────────────────────────────────────────
-# PARALLEL GPT IMPLEMENTATION
+# PARALLEL IMPLEMENTATION
 # ─────────────────────────────────────────────
-def gpt_implement_parallel(client: openai.OpenAI, session_id: str, task: str,
-                           chunks: list, iteration: int, model_id: str,
-                           q: queue.Queue) -> dict:
+def run_implementer_parallel(anthropic_client: anthropic.Anthropic, openai_client: openai.OpenAI,
+                             session_id: str, task: str,
+                             chunks: list, iteration: int, model_id: str,
+                             q: queue.Queue) -> dict:
     """
-    Lancia N GPT worker in parallelo (uno per chunk), poi restituisce
-    un dict {chunk_id: code}.
+    Lancia N worker in parallelo (uno per chunk) usando Claude o GPT
+    a seconda del provider del modello scelto.
     """
     MAX_WORKERS = 3
     chunk_results = {}
     chunk_errors  = {}
+    provider = MODELS.get(model_id, {}).get("provider", "openai")
 
-    # Costruisci contesto condiviso: ogni worker sa cosa faranno gli altri
     shared_context = "\n".join(
         f"- Chunk {ch['id']} ({ch['title']}): implementato da un altro worker in parallelo"
         for ch in chunks
@@ -616,10 +653,9 @@ def gpt_implement_parallel(client: openai.OpenAI, session_id: str, task: str,
         title = chunk["title"]
         spec  = chunk["spec"]
 
-        # parallel_chunk_start already emitted synchronously before thread launch
         emit(q, "parallel_chunk_running", {"chunk_id": cid})
         system = (
-            "Sei GPT, implementer parallelo di Ettorino.\n"
+            "Sei l'Implementer parallelo di Ettorino.\n"
             "Stai implementando UN SOLO chunk di un progetto più grande.\n"
             "Altri worker stanno implementando gli altri chunk in parallelo.\n\n"
             "FORMATO OUTPUT — OBBLIGATORIO:\n"
@@ -637,32 +673,74 @@ def gpt_implement_parallel(client: openai.OpenAI, session_id: str, task: str,
 
         full_code = ""
         truncated = False
+        input_tok_c = output_tok_c = 0
 
         try:
-            if model_id == "o3":
-                resp = client.chat.completions.create(
-                    model=model_id,
-                    max_completion_tokens=max_tok,
-                    messages=[
-                        {"role": "system", "content": system},
-                        {"role": "user",   "content": prompt},
-                    ]
-                )
-                full_code     = resp.choices[0].message.content or ""
-                truncated     = resp.choices[0].finish_reason == "length"
-                input_tok_c   = resp.usage.prompt_tokens
-                output_tok_c  = resp.usage.completion_tokens
-            else:
-                stream = client.chat.completions.create(
+            if provider == "anthropic":
+                # ── Claude parallel worker ──────────────────────────────────
+                with anthropic_client.messages.stream(
                     model=model_id,
                     max_tokens=max_tok,
-                    stream=True,
-                    stream_options={"include_usage": True},
-                    messages=[
-                        {"role": "system", "content": system},
-                        {"role": "user",   "content": prompt},
-                    ]
-                )
+                    system=system,
+                    messages=[{"role": "user", "content": prompt}]
+                ) as stream:
+                    for text in stream.text_stream:
+                        full_code += text
+                    final_msg = stream.get_final_message()
+                    input_tok_c  = final_msg.usage.input_tokens
+                    output_tok_c = final_msg.usage.output_tokens
+                    truncated    = (final_msg.stop_reason == "max_tokens")
+
+                MAX_CONT = 2
+                cont = 0
+                while truncated and cont < MAX_CONT:
+                    cont += 1
+                    emit(q, "parallel_chunk_continuation", {"chunk_id": cid, "attempt": cont})
+                    with anthropic_client.messages.stream(
+                        model=model_id,
+                        max_tokens=max_tok,
+                        system=system,
+                        messages=[
+                            {"role": "user",      "content": prompt},
+                            {"role": "assistant", "content": full_code},
+                            {"role": "user",      "content": "Continua esattamente da dove ti sei fermato."},
+                        ]
+                    ) as cs:
+                        cont_text = ""
+                        for text in cs.text_stream:
+                            cont_text += text
+                        final_cont = cs.get_final_message()
+                        input_tok_c  += final_cont.usage.input_tokens
+                        output_tok_c += final_cont.usage.output_tokens
+                        truncated     = (final_cont.stop_reason == "max_tokens")
+                    full_code += cont_text
+
+            else:
+                # ── OpenAI parallel worker ──────────────────────────────────
+                if model_id == "o3":
+                    resp = openai_client.chat.completions.create(
+                        model=model_id,
+                        max_completion_tokens=max_tok,
+                        messages=[
+                            {"role": "system", "content": system},
+                            {"role": "user",   "content": prompt},
+                        ]
+                    )
+                    full_code     = resp.choices[0].message.content or ""
+                    truncated     = resp.choices[0].finish_reason == "length"
+                    input_tok_c   = resp.usage.prompt_tokens
+                    output_tok_c  = resp.usage.completion_tokens
+                else:
+                    stream = openai_client.chat.completions.create(
+                        model=model_id,
+                        max_tokens=max_tok,
+                        stream=True,
+                        stream_options={"include_usage": True},
+                        messages=[
+                            {"role": "system", "content": system},
+                            {"role": "user",   "content": prompt},
+                        ]
+                    )
                 last_finish = None
                 input_tok_c = output_tok_c = 0
                 for chunk_ev in stream:
@@ -676,45 +754,45 @@ def gpt_implement_parallel(client: openai.OpenAI, session_id: str, task: str,
                         output_tok_c = chunk_ev.usage.completion_tokens
                 truncated = (last_finish == "length")
 
-            # Auto-continuazione se troncato
-            MAX_CONT = 2
-            cont = 0
-            while truncated and cont < MAX_CONT:
-                cont += 1
-                emit(q, "parallel_chunk_continuation", {"chunk_id": cid, "attempt": cont})
-                cont_msgs = [
-                    {"role": "system",    "content": system},
-                    {"role": "user",      "content": prompt},
-                    {"role": "assistant", "content": full_code},
-                    {"role": "user",      "content": "Continua esattamente da dove ti sei fermato."},
-                ]
-                if model_id == "o3":
-                    cr = client.chat.completions.create(
-                        model=model_id, max_completion_tokens=max_tok, messages=cont_msgs)
-                    full_code += cr.choices[0].message.content or ""
-                    truncated  = cr.choices[0].finish_reason == "length"
-                    input_tok_c  += cr.usage.prompt_tokens
-                    output_tok_c += cr.usage.completion_tokens
-                else:
-                    cs = client.chat.completions.create(
-                        model=model_id, max_tokens=max_tok, stream=True,
-                        stream_options={"include_usage": True}, messages=cont_msgs)
-                    last_finish = None
-                    for cev in cs:
-                        if cev.choices:
-                            full_code += cev.choices[0].delta.content or ""
-                            if cev.choices[0].finish_reason:
-                                last_finish = cev.choices[0].finish_reason
-                        if hasattr(cev, "usage") and cev.usage:
-                            input_tok_c  += cev.usage.prompt_tokens
-                            output_tok_c += cev.usage.completion_tokens
-                    truncated = (last_finish == "length")
+                # Auto-continuazione OpenAI
+                MAX_CONT = 2
+                cont = 0
+                while truncated and cont < MAX_CONT:
+                    cont += 1
+                    emit(q, "parallel_chunk_continuation", {"chunk_id": cid, "attempt": cont})
+                    cont_msgs = [
+                        {"role": "system",    "content": system},
+                        {"role": "user",      "content": prompt},
+                        {"role": "assistant", "content": full_code},
+                        {"role": "user",      "content": "Continua esattamente da dove ti sei fermato."},
+                    ]
+                    if model_id == "o3":
+                        cr = openai_client.chat.completions.create(
+                            model=model_id, max_completion_tokens=max_tok, messages=cont_msgs)
+                        full_code += cr.choices[0].message.content or ""
+                        truncated  = cr.choices[0].finish_reason == "length"
+                        input_tok_c  += cr.usage.prompt_tokens
+                        output_tok_c += cr.usage.completion_tokens
+                    else:
+                        cs = openai_client.chat.completions.create(
+                            model=model_id, max_tokens=max_tok, stream=True,
+                            stream_options={"include_usage": True}, messages=cont_msgs)
+                        last_finish = None
+                        for cev in cs:
+                            if cev.choices:
+                                full_code += cev.choices[0].delta.content or ""
+                                if cev.choices[0].finish_reason:
+                                    last_finish = cev.choices[0].finish_reason
+                            if hasattr(cev, "usage") and cev.usage:
+                                input_tok_c  += cev.usage.prompt_tokens
+                                output_tok_c += cev.usage.completion_tokens
+                        truncated = (last_finish == "length")
 
             add_cost(session_id, model_id, input_tok_c, output_tok_c)
             emit(q, "cost_update", {
                 "model_id":    model_id,
                 "model_label": MODELS[model_id]["label"],
-                "provider":    "openai",
+                "provider":    provider,
                 "input_tokens":  input_tok_c,
                 "output_tokens": output_tok_c,
                 "call_cost":     calc_cost(model_id, input_tok_c, output_tok_c)[0],
@@ -795,23 +873,38 @@ def gpt_implement_parallel(client: openai.OpenAI, session_id: str, task: str,
 
     return chunk_results
 
-def get_project_files_summary(task: str) -> str:
-    """Restituisce un elenco dei file già salvati nel workspace per il task corrente."""
+def get_project_files_summary(task: str, include_content: bool = True, max_file_bytes: int = 8000) -> str:
+    """
+    Restituisce l'elenco dei file nel workspace + contenuto per file piccoli.
+    Claude può così verificare il codice senza chiedere all'utente.
+    """
     import re as _re
     words = _re.findall(r"[a-zA-Z]+", task)[:3]
     slug = "_".join(w.lower() for w in words) or "task"
     proj_dir = WORKSPACE / slug
     if not proj_dir.exists():
         return ""
-    files = sorted(proj_dir.rglob("*"))
-    file_list = [str(f.relative_to(proj_dir)) for f in files if f.is_file()]
-    if not file_list:
+    files = sorted(f for f in proj_dir.rglob("*") if f.is_file())
+    if not files:
         return ""
-    return (
-        f"\n\nFILE GIÀ PRESENTI NEL WORKSPACE ({proj_dir}):\n"
-        + "\n".join(f"  - {f}" for f in file_list)
-        + "\nNon chiedere all'utente questi file — sono già disponibili su disco."
-    )
+
+    lines = [f"\n\nFILE GIÀ PRESENTI NEL WORKSPACE ({proj_dir}) — NON chiedere questi file all'utente:"]
+    text_exts = {".py", ".js", ".ts", ".html", ".css", ".json", ".yaml", ".yml",
+                 ".toml", ".txt", ".md", ".sh", ".env", ".cfg", ".ini", ".xml"}
+
+    for f in files:
+        rel = str(f.relative_to(proj_dir))
+        size = f.stat().st_size
+        if include_content and f.suffix.lower() in text_exts and size <= max_file_bytes:
+            try:
+                content = f.read_text(encoding="utf-8")
+                lines.append(f"\n### FILE: {rel} ({size} bytes)\n```\n{content}\n```")
+            except Exception:
+                lines.append(f"  - {rel} ({size} bytes) [errore lettura]")
+        else:
+            lines.append(f"  - {rel} ({size} bytes){' [troppo grande per mostrare]' if size > max_file_bytes else ''}")
+
+    return "\n".join(lines)
 
 # ─────────────────────────────────────────────
 # ─────────────────────────────────────────────
@@ -853,7 +946,7 @@ def run_agent_loop(session_id: str, task: str, q: queue.Queue):
         emit(q, "human_response", {"text": clarification})
         # Riclassifica con il chiarimento
         task = f"{task}\n\nChiarimento dell'utente: {clarification}"
-        classification = classify_task(claude_client, session_id, task, q)
+        classification = classify_task(claude_client, session_id, task, q, silent=True)
         difficulty             = classification.get("difficulty", "medium")
         suggested_reasoner     = classification.get("suggested_reasoner", TIER_MODELS[difficulty]["reasoner"])
         suggested_implementer  = classification.get("suggested_implementer", TIER_MODELS[difficulty]["implementer"])
@@ -880,11 +973,11 @@ def run_agent_loop(session_id: str, task: str, q: queue.Queue):
         "estimated_cost":     est_cost,
         "available_reasoners": [
             {"id": k, "label": v["label"], "tier": v["tier"]}
-            for k, v in MODELS.items() if v["role"] == "reasoner"
+            for k, v in MODELS.items() if "reasoner" in v["role"]
         ],
         "available_implementers": [
-            {"id": k, "label": v["label"], "tier": v["tier"]}
-            for k, v in MODELS.items() if v["role"] == "implementer"
+            {"id": k, "label": v["label"], "tier": v["tier"], "provider": v["provider"]}
+            for k, v in MODELS.items() if "implementer" in v["role"]
         ],
     })
 
@@ -972,7 +1065,7 @@ def run_agent_loop(session_id: str, task: str, q: queue.Queue):
         elif status == "implement":
             spec = result.get("spec", "")
             emit(q, "spec_ready", {"spec": spec})
-            code = gpt_implement(openai_client, session_id, task, spec, "",
+            code = run_implementer(claude_client, openai_client, session_id, task, spec, "",
                                  iteration, implementer_model, q)
             context = (f"Codice prodotto (iterazione {iteration}):\n```python\n{code}\n```\n"
                        "Verifica correttezza e completezza rispetto al task originale."
@@ -984,11 +1077,11 @@ def run_agent_loop(session_id: str, task: str, q: queue.Queue):
                 # fallback a implement normale se chunks mancanti
                 spec = result.get("spec", "") or "Implementa il task come specificato."
                 emit(q, "spec_ready", {"spec": spec})
-                code = gpt_implement(openai_client, session_id, task, spec, "",
+                code = run_implementer(claude_client, openai_client, session_id, task, spec, "",
                                      iteration, implementer_model, q)
             else:
-                chunk_results = gpt_implement_parallel(
-                    openai_client, session_id, task, chunks, iteration, implementer_model, q
+                chunk_results = run_implementer_parallel(
+                    claude_client, openai_client, session_id, task, chunks, iteration, implementer_model, q
                 )
                 # Combina tutti i chunk per il contesto di review
                 combined = "\n\n".join(
@@ -1051,7 +1144,7 @@ def run_agent_loop(session_id: str, task: str, q: queue.Queue):
                 emit(q, "gpt_realignment", {"feedback": feedback})
             else:
                 emit(q, "fix_needed", {"feedback": feedback})
-            code = gpt_implement(openai_client, session_id, task,
+            code = run_implementer(claude_client, openai_client, session_id, task,
                                  f"Correggi il codice:\n\nCODICE:\n{code}",
                                  feedback, iteration, implementer_model, q)
             context = (f"Codice corretto (iterazione {iteration}):\n```python\n{code}\n```\n"
@@ -1135,11 +1228,11 @@ def continue_agent_loop(session_id: str, followup: str, q: queue.Queue):
         "estimated_cost":     est_cost,
         "available_reasoners": [
             {"id": k, "label": v["label"], "tier": v["tier"], "available": v.get("available", True)}
-            for k, v in MODELS.items() if v["role"] == "reasoner"
+            for k, v in MODELS.items() if "reasoner" in v["role"]
         ],
         "available_implementers": [
-            {"id": k, "label": v["label"], "tier": v["tier"], "available": v.get("available", True)}
-            for k, v in MODELS.items() if v["role"] == "implementer"
+            {"id": k, "label": v["label"], "tier": v["tier"], "provider": v["provider"], "available": v.get("available", True)}
+            for k, v in MODELS.items() if "implementer" in v["role"]
         ],
     })
 
@@ -1217,7 +1310,7 @@ def continue_agent_loop(session_id: str, followup: str, q: queue.Queue):
         elif status == "implement":
             spec = result.get("spec", "")
             emit(q, "spec_ready", {"spec": spec})
-            code = gpt_implement(openai_client, session_id, combined_task, spec, "",
+            code = run_implementer(claude_client, openai_client, session_id, combined_task, spec, "",
                                  iteration, implementer_model, q)
             context = (f"Codice aggiornato (iterazione {iteration}):\n```python\n{code}\n```\n"
                        "Verifica correttezza e completezza rispetto a task + continuazione."
@@ -1229,7 +1322,7 @@ def continue_agent_loop(session_id: str, followup: str, q: queue.Queue):
                 emit(q, "gpt_realignment", {"feedback": feedback})
             else:
                 emit(q, "fix_needed", {"feedback": feedback})
-            code = gpt_implement(openai_client, session_id, combined_task,
+            code = run_implementer(claude_client, openai_client, session_id, combined_task,
                                  f"Correggi il codice:\n\nCODICE:\n{code}",
                                  feedback, iteration, implementer_model, q)
             context = (f"Codice corretto (iterazione {iteration}):\n```python\n{code}\n```\n"
