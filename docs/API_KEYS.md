@@ -1,141 +1,129 @@
-# 🔑 Come ottenere le API Key
+# 🔑 Getting your API Keys
 
-Ettorino ha bisogno di due chiavi API: una di **Anthropic** (per Claude) e una di **OpenAI** (per GPT/o3).
-Entrambe funzionano a consumo — paghi solo quello che usi, nessun abbonamento obbligatorio.
+Ettorino needs two API keys: one from **Anthropic** (for Claude) and one from **OpenAI** (for GPT/o3).
+Both work on a pay-per-use basis — you only pay for what you use, no subscription required.
 
 ---
 
 ## 1. Anthropic API Key (Claude)
 
-### Registrazione
+### Sign up
 
-1. Vai su [console.anthropic.com](https://console.anthropic.com)
-2. Clicca **Sign Up** e crea un account (email + password)
-3. Verifica l'email
+1. Go to [console.anthropic.com](https://console.anthropic.com)
+2. Click **Sign Up** and create an account (email + password)
+3. Verify your email
 
-### Genera la chiave
+### Generate the key
 
-1. Entra nella console → menu laterale **API Keys**
-2. Clicca **Create Key**
-3. Daile un nome (es. `ettorino`)
-4. **Copia subito la chiave** — viene mostrata una sola volta!
+1. Open the console → sidebar **API Keys**
+2. Click **Create Key**
+3. Give it a name (e.g. `ettorino`)
+4. **Copy the key immediately** — it's only shown once!
 
-La chiave ha questo formato:
+The key looks like this:
 ```
 sk-ant-api03-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 ```
 
-### Crediti e costi
+### Credits and billing
 
-| Situazione | Cosa succede |
+| Situation | What happens |
 |---|---|
-| Nuovo account | ~$5 di crediti gratuiti per testare |
-| Crediti esauriti | Devi ricaricare manualmente |
-| Nessun abbonamento | Paghi solo le chiamate API che fai |
+| New account | ~$5 in free credits to get started |
+| Credits exhausted | Add more manually |
+| No subscription | You only pay for the API calls you make |
 
-Per ricaricare: **Console → Billing → Add Credits** (minimo $5)
+To top up: **Console → Billing → Add Credits** (minimum $5)
 
-### Prezzi modelli Anthropic (maggio 2026)
+### Anthropic model pricing (May 2026)
 
-| Modello | Input $/1M tok | Output $/1M tok |
+| Model | Input $/1M tok | Output $/1M tok |
 |---|---|---|
-| Claude Haiku 4.5 | $0.80 | $4.00 |
-| Claude Sonnet 4.5 | $3.00 | $15.00 |
-| Claude Opus 4.5 | $15.00 | $75.00 |
+| Claude Haiku 4.5 | $1.00 | $5.00 |
+| Claude Sonnet 4.6 | $3.00 | $15.00 |
+| Claude Opus 4.6 | $5.00 | $25.00 |
+| Claude Opus 4.7 | $5.00 | $25.00 |
 
-> **Nota**: Il piano Claude Max ($100/mese) riguarda solo l'interfaccia web claude.ai — **non include crediti API**. Sono sistemi di fatturazione separati.
+> **Note:** The Claude Max plan ($100/month) is for the claude.ai web interface only — it does **not** include API credits. They are separate billing systems.
 
 ---
 
 ## 2. OpenAI API Key (GPT / o3)
 
-### Registrazione
+### Sign up
 
-1. Vai su [platform.openai.com](https://platform.openai.com)
-2. Clicca **Sign Up** e crea un account
-3. Verifica l'email
+1. Go to [platform.openai.com](https://platform.openai.com)
+2. Click **Sign Up** and create an account
+3. Verify your email
 
-### Aggiungi un metodo di pagamento
+### Add a payment method
 
-A differenza di Anthropic, OpenAI **non offre crediti gratuiti automatici** ai nuovi account (il programma è stato discontinuato a metà 2025).
+Unlike Anthropic, OpenAI **does not offer automatic free credits** to new accounts (the program was discontinued in mid-2025).
 
-1. Vai su **Billing → Payment methods**
-2. Aggiungi una carta di credito
-3. Vai su **Billing → Add to credit balance**
-4. Ricarica il minimo ($5 sono più che sufficienti per iniziare)
+1. Go to **Billing → Payment methods**
+2. Add a credit card
+3. Go to **Billing → Add to credit balance**
+4. Top up the minimum ($5 is more than enough to get started)
 
-### Genera la chiave
+### Generate the key
 
-1. Vai su **API Keys** nel menu laterale
-2. Clicca **Create new secret key**
-3. Daile un nome (es. `ettorino`)
-4. **Copia subito la chiave** — viene mostrata una sola volta!
+1. Go to **API Keys** in the sidebar
+2. Click **Create new secret key**
+3. Give it a name (e.g. `ettorino`)
+4. **Copy the key immediately** — it's only shown once!
 
-La chiave ha questo formato:
+The key looks like this:
 ```
 sk-proj-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 ```
 
-### Prezzi modelli OpenAI (maggio 2026)
+### OpenAI model pricing (May 2026)
 
-| Modello | Input $/1M tok | Output $/1M tok |
+| Model | Input $/1M tok | Output $/1M tok |
 |---|---|---|
-| GPT-4o mini | $0.15 | $0.60 |
-| GPT-4o | $2.50 | $10.00 |
-| o3 | $10.00 | $40.00 |
+| GPT-4.1 mini | $0.40 | $1.60 |
+| GPT-4.1 | $2.00 | $8.00 |
+| o3 | $15.00 | $60.00 |
 
-> **Nota**: Il piano ChatGPT Pro ($200/mese) riguarda solo il sito chat.openai.com — **non include crediti API**. Sono sistemi di fatturazione separati.
+> **Note:** The ChatGPT Pro plan ($200/month) is for chat.openai.com only — it does **not** include API credits. They are separate billing systems.
 
 ---
 
-## 3. Inserire le chiavi in Ettorino
+## 3. Adding your keys to Ettorino
 
-Apri il file `.env` nella cartella di Ettorino e sostituisci i placeholder:
+Open the `.env` file in the Ettorino folder and replace the placeholders:
 
 ```env
 ANTHROPIC_API_KEY=sk-ant-api03-XXXXXXXX...
 OPENAI_API_KEY=sk-proj-XXXXXXXX...
 ```
 
-Salva il file. La prossima volta che avvii `ettorino_assistant.py` le chiavi vengono caricate automaticamente.
+Save the file. The next time you start `ettorino_assistant.py`, the keys are loaded automatically.
 
 ---
 
-## 4. Sicurezza — regole fondamentali
+## 4. Security — the basics
 
-> ⚠️ Le chiavi API sono come password. Se qualcuno le ottiene, può spendere i tuoi crediti.
+> ⚠️ API keys are like passwords. If someone gets them, they can spend your credits.
 
-- **Non committare mai `.env` su git** (il `.gitignore` incluso lo esclude automaticamente)
-- **Non condividere le chiavi** in chat, email, o screenshot
-- **Non inserirle nel codice** — usa sempre il file `.env`
-- Se pensi che una chiave sia compromessa, **disabilitala subito** dalla console e creane una nuova
-- Imposta un **spending limit mensile** come precauzione:
+- **Never commit `.env` to git** (the included `.gitignore` excludes it automatically)
+- **Never share your keys** in chat, email, or screenshots
+- **Never hardcode them** — always use the `.env` file
+- If you think a key has been compromised, **disable it immediately** from the console and create a new one
+- Set a **monthly spending limit** as a safeguard:
   - Anthropic: Console → Billing → Usage limits
   - OpenAI: Platform → Billing → Usage limits
 
 ---
 
-## 5. Quanto spendo per testare?
+## 5. How much will I spend testing?
 
-Con $5 su ciascuna piattaforma puoi fare moltissimo:
+With $5 on each platform you can do a lot:
 
-| Scenario | Costo stimato |
+| Scenario | Estimated cost |
 |---|---|
-| 50 task easy (Haiku + GPT-4o mini) | ~$0.10 totale |
-| 20 task medium (Sonnet + GPT-4o) | ~$1.00 totale |
-| 5 task hard (Opus + o3) | ~$2.00 totale |
+| 50 easy tasks (Haiku + GPT-4.1 mini) | ~$0.10 total |
+| 20 medium tasks (Sonnet + GPT-4.1) | ~$1.00 total |
+| 5 hard tasks (Opus + o3) | ~$2.00 total |
 
-Il **pannello costi live** di Ettorino ti mostra esattamente quanto stai spendendo a ogni chiamata, così non ci sono sorprese.
-
----
-
-## 6. Alternativa gratuita per testare (senza carta)
-
-Se vuoi provare Ettorino a costo zero prima di caricare crediti, puoi usare **Google Gemini** come implementer al posto di GPT. Gemini offre un tier gratuito generoso (1.500 richieste/giorno) senza carta di credito.
-
-Per abilitarlo installa:
-```bash
-pip install google-generativeai
-```
-
-E chiedi a Ettorino di aggiungere il supporto Gemini — è un buon primo task da dargli! 😄
+Ettorino's **live cost panel** shows you exactly what each call costs in real time — no surprises.

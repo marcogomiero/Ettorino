@@ -795,8 +795,25 @@ def gpt_implement_parallel(client: openai.OpenAI, session_id: str, task: str,
 
     return chunk_results
 
+def get_project_files_summary(task: str) -> str:
+    """Restituisce un elenco dei file già salvati nel workspace per il task corrente."""
+    import re as _re
+    words = _re.findall(r"[a-zA-Z]+", task)[:3]
+    slug = "_".join(w.lower() for w in words) or "task"
+    proj_dir = WORKSPACE / slug
+    if not proj_dir.exists():
+        return ""
+    files = sorted(proj_dir.rglob("*"))
+    file_list = [str(f.relative_to(proj_dir)) for f in files if f.is_file()]
+    if not file_list:
+        return ""
+    return (
+        f"\n\nFILE GIÀ PRESENTI NEL WORKSPACE ({proj_dir}):\n"
+        + "\n".join(f"  - {f}" for f in file_list)
+        + "\nNon chiedere all'utente questi file — sono già disponibili su disco."
+    )
+
 # ─────────────────────────────────────────────
-# MAIN LOOP
 # ─────────────────────────────────────────────
 def run_agent_loop(session_id: str, task: str, q: queue.Queue):
     try:
@@ -958,7 +975,8 @@ def run_agent_loop(session_id: str, task: str, q: queue.Queue):
             code = gpt_implement(openai_client, session_id, task, spec, "",
                                  iteration, implementer_model, q)
             context = (f"Codice prodotto (iterazione {iteration}):\n```python\n{code}\n```\n"
-                       "Verifica correttezza e completezza rispetto al task originale.")
+                       "Verifica correttezza e completezza rispetto al task originale."
+                       + get_project_files_summary(task))
 
         elif status == "implement_parallel":
             chunks = result.get("parallel_chunks", [])
@@ -1018,11 +1036,13 @@ def run_agent_loop(session_id: str, task: str, q: queue.Queue):
                     "3) naming consistency, 4) interfacce compatibili tra chunk. "
                     "Se tutto OK → status done. Se ci sono problemi → status fix con feedback specifico."
                 )
+                context_parts.append(get_project_files_summary(task))
                 context = "\n".join(context_parts)
             else:
                 context = (
                     f"Codice prodotto (iterazione {iteration}):\n```python\n{code}\n```\n"
                     "Verifica correttezza e completezza rispetto al task originale."
+                    + get_project_files_summary(task)
                 )
 
         elif status == "fix":
@@ -1035,7 +1055,8 @@ def run_agent_loop(session_id: str, task: str, q: queue.Queue):
                                  f"Correggi il codice:\n\nCODICE:\n{code}",
                                  feedback, iteration, implementer_model, q)
             context = (f"Codice corretto (iterazione {iteration}):\n```python\n{code}\n```\n"
-                       "Verifica di nuovo.")
+                       "Verifica di nuovo."
+                       + get_project_files_summary(task))
 
     # Max iterazioni raggiunto
     total = session_costs[session_id]["total"]
@@ -1199,7 +1220,8 @@ def continue_agent_loop(session_id: str, followup: str, q: queue.Queue):
             code = gpt_implement(openai_client, session_id, combined_task, spec, "",
                                  iteration, implementer_model, q)
             context = (f"Codice aggiornato (iterazione {iteration}):\n```python\n{code}\n```\n"
-                       "Verifica correttezza e completezza rispetto a task + continuazione.")
+                       "Verifica correttezza e completezza rispetto a task + continuazione."
+                       + get_project_files_summary(task))
 
         elif status == "fix":
             feedback = result.get("feedback", "")
@@ -1211,7 +1233,8 @@ def continue_agent_loop(session_id: str, followup: str, q: queue.Queue):
                                  f"Correggi il codice:\n\nCODICE:\n{code}",
                                  feedback, iteration, implementer_model, q)
             context = (f"Codice corretto (iterazione {iteration}):\n```python\n{code}\n```\n"
-                       "Verifica di nuovo.")
+                       "Verifica di nuovo."
+                       + get_project_files_summary(task))
 
     total = session_costs[session_id]["total"]
     emit(q, "loop_end", {
@@ -1323,6 +1346,26 @@ def download():
     from flask import send_file
     return send_file(buf, mimetype="application/zip",
                      as_attachment=True, download_name=zip_name)
+
+@app.route("/file_content")
+def file_content():
+    """Restituisce il contenuto testuale di un file nel workspace."""
+    path_str = request.args.get("path", "").strip()
+    if not path_str:
+        return jsonify({"error": "path mancante"}), 400
+    file_path = Path(path_str)
+    # Security: must be inside WORKSPACE
+    try:
+        file_path.resolve().relative_to(WORKSPACE.resolve())
+    except ValueError:
+        return jsonify({"error": "path non autorizzato"}), 403
+    if not file_path.exists() or not file_path.is_file():
+        return jsonify({"error": "file non trovato"}), 404
+    try:
+        content = file_path.read_text(encoding="utf-8")
+        return jsonify({"content": content, "filename": file_path.name})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/models")
 def models():

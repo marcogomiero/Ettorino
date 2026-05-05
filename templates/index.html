@@ -90,6 +90,34 @@
     .stop-fab:active{transform:scale(.96)}
     .stop-fab.visible{display:flex}
 
+    /* ── ITERATION BADGE (near stop FAB) ── */
+    .iter-badge{
+      display:none;
+      position:fixed;bottom:74px;right:28px;z-index:998;
+      flex-direction:column;align-items:flex-end;gap:3px;
+    }
+    .iter-badge.visible{display:flex}
+    .iter-pill{
+      background:rgba(247,246,242,0.95);
+      backdrop-filter:blur(6px);
+      border:1px solid #e5e3de;
+      border-radius:999px;
+      padding:4px 12px;
+      font-family:'DM Mono',monospace;
+      font-size:.65rem;font-weight:600;
+      color:#1a1744;
+      white-space:nowrap;
+      box-shadow:0 2px 8px rgba(0,0,0,.08);
+      display:flex;align-items:center;gap:6px;
+    }
+    .iter-progress-track{
+      width:54px;height:3px;background:#e5e3de;border-radius:999px;overflow:hidden;
+    }
+    .iter-progress-fill{
+      height:100%;background:#f97316;border-radius:999px;
+      transition:width .4s ease;
+    }
+
     /* ── LIVE SECTION ── */
     .live-section{max-width:860px;margin:0 auto;padding:0 1.5rem 3rem}
     .live-label{font-size:.67rem;letter-spacing:.16em;text-transform:uppercase;color:#bbb;font-family:'DM Mono',monospace;margin-bottom:.9rem;display:flex;align-items:center;gap:6px}
@@ -240,9 +268,117 @@
 
     /* alignment warning */
     .alignment-warn{display:inline-flex;align-items:center;gap:4px;background:#fff7ed;border:1px solid #fed7aa;border-radius:999px;padding:2px 8px;font-size:.65rem;color:#c2410c;font-weight:600;margin-bottom:4px}
+
+    /* ── GPT FILE CHIPS ── */
+    .gpt-files-wrap{margin-top:8px;display:flex;flex-wrap:wrap;gap:6px}
+    .file-chip{
+      display:inline-flex;align-items:center;gap:6px;
+      background:#f0fdf4;border:1px solid #a7f3d0;
+      border-radius:8px;padding:5px 11px;
+      font-family:'DM Mono',monospace;font-size:.7rem;font-weight:500;color:#065f46;
+      cursor:pointer;transition:background .15s,border-color .15s,transform .1s;
+      text-decoration:none;
+    }
+    .file-chip:hover{background:#d1fae5;border-color:#059669;transform:translateY(-1px)}
+    .file-chip:active{transform:scale(.97)}
+    .file-chip .chip-icon{font-size:.75rem}
+    .file-chip .chip-ext{
+      font-size:.6rem;background:#065f46;color:#fff;
+      border-radius:3px;padding:1px 4px;letter-spacing:.04em;
+    }
+    .file-chip-dl{
+      background:#fff7ed;border-color:#fed7aa;color:#c2410c;
+    }
+    .file-chip-dl:hover{background:#ffedd5;border-color:#f97316}
+
+    /* ── CODE VIEWER MODAL ── */
+    .code-modal-overlay{
+      display:none;position:fixed;inset:0;z-index:1000;
+      background:rgba(15,14,23,0.65);
+      backdrop-filter:blur(6px);
+      align-items:center;justify-content:center;
+      padding:1.5rem;
+    }
+    .code-modal-overlay.open{display:flex}
+    .code-modal{
+      background:#fff;border-radius:16px;
+      box-shadow:0 24px 80px rgba(0,0,0,.22);
+      width:100%;max-width:780px;max-height:82vh;
+      display:flex;flex-direction:column;
+      overflow:hidden;
+      animation:modalIn .2s cubic-bezier(.34,1.4,.64,1);
+    }
+    @keyframes modalIn{
+      from{opacity:0;transform:scale(.95) translateY(10px)}
+      to{opacity:1;transform:scale(1) translateY(0)}
+    }
+    .code-modal-header{
+      display:flex;align-items:center;gap:10px;
+      padding:.9rem 1.2rem;
+      border-bottom:1px solid #e5e3de;
+      flex-shrink:0;
+    }
+    .code-modal-filename{
+      font-family:'DM Mono',monospace;font-size:.8rem;font-weight:600;color:#1a1744;flex:1;
+      white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+    }
+    .code-modal-lang{
+      font-size:.65rem;background:#f1f5f9;color:#64748b;
+      border-radius:4px;padding:2px 7px;font-family:'DM Mono',monospace;
+      flex-shrink:0;
+    }
+    .code-modal-copy{
+      display:flex;align-items:center;gap:5px;
+      background:#1a1744;color:#fff;border:none;border-radius:999px;
+      padding:6px 14px;font-family:'Outfit',sans-serif;font-size:.78rem;font-weight:600;
+      cursor:pointer;flex-shrink:0;transition:background .15s;
+    }
+    .code-modal-copy:hover{background:#f97316}
+    .code-modal-copy.copied{background:#059669}
+    .code-modal-close{
+      width:28px;height:28px;border-radius:50%;border:none;
+      background:#f1f5f9;color:#64748b;font-size:1rem;
+      cursor:pointer;display:flex;align-items:center;justify-content:center;
+      flex-shrink:0;transition:background .15s;
+    }
+    .code-modal-close:hover{background:#e2e8f0;color:#1a1744}
+    .code-modal-body{
+      overflow-y:auto;flex:1;
+      padding:0;
+    }
+    .code-modal-body pre{
+      margin:0;padding:1.2rem 1.4rem;
+      font-family:'DM Mono',monospace;font-size:.76rem;
+      line-height:1.6;color:#1a1744;
+      white-space:pre;overflow-x:auto;
+      min-height:100%;
+    }
+    /* line numbers */
+    .code-modal-body pre .ln{
+      display:inline-block;min-width:2.8em;
+      color:#ccc;user-select:none;margin-right:.8em;text-align:right;
+    }
   </style>
 </head>
 <body>
+
+<!-- CODE VIEWER MODAL -->
+<div class="code-modal-overlay" id="codeModal" onclick="closeCodeModal(event)">
+  <div class="code-modal">
+    <div class="code-modal-header">
+      <span class="code-modal-filename" id="modalFilename">file.py</span>
+      <span class="code-modal-lang" id="modalLang">python</span>
+      <button class="code-modal-copy" id="modalCopyBtn" onclick="copyModalCode()">
+        <svg viewBox="0 0 16 16" style="width:11px;height:11px;fill:currentColor"><rect x="5" y="5" width="9" height="9" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 11V3a1 1 0 011-1h8" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
+        Copia
+      </button>
+      <button class="code-modal-close" onclick="closeCodeModalDirect()">×</button>
+    </div>
+    <div class="code-modal-body">
+      <pre id="modalCode"></pre>
+    </div>
+  </div>
+</div>
 
 <!-- COST BAR -->
 <div class="cost-bar" id="costBar">
@@ -411,7 +547,11 @@ var currentStreamTokens = 0;
 var currentProgressEl = null;
 var currentProgressBar = null;
 var currentProgressLabel = null;
-var lastSavedPath = null;   // path of last workspace project for download link
+var currentGptChipsEl = null;
+var pendingChipsEl = null;   // chips container waiting for file_saved
+var lastSavedPath = null;    // path of last workspace project for download link
+var lastSavedFiles = [];     // list of saved file paths for chip display
+var codeStore = {};          // filename → code content (fetched on demand)
 
 function startStreamBubble(agentKey, modelLabel){
   var parts = createMsg(agentKey);
@@ -453,9 +593,9 @@ function startStreamBubble(agentKey, modelLabel){
     currentProgressBar = bar;
     currentProgressLabel = label.querySelector('#tok-count');
   }
-  // For GPT: green coding progress bar — hide code, show progress
+  // For GPT: green coding progress bar — hide code body completely
   if(agentKey === 'gpt'){
-    body.style.display = 'none'; // hide code body
+    body.style.display = 'none';
     var gprog = document.createElement('div');
     gprog.className = 'gpt-progress';
     var gbarWrap = document.createElement('div');
@@ -468,10 +608,16 @@ function startStreamBubble(agentKey, modelLabel){
     glabel.innerHTML = '<span>scrivendo codice...</span><span id="gpt-tok-count">0 tok · 0 righe</span>';
     gprog.appendChild(gbarWrap);
     gprog.appendChild(glabel);
+    // placeholder for file chips — appended after streaming ends
+    var gchips = document.createElement('div');
+    gchips.className = 'gpt-files-wrap';
+    gchips.id = 'gpt-chips-' + Date.now();
+    gprog.appendChild(gchips);
     body.parentNode.insertBefore(gprog, body.nextSibling);
     currentProgressEl = gprog;
     currentProgressBar = gbar;
     currentProgressLabel = glabel.querySelector('#gpt-tok-count');
+    currentGptChipsEl = gchips;
   }
 
   return body;
@@ -560,22 +706,16 @@ function endStream(){
     currentProgressBar.style.animation = 'none';
 
     if(currentStreamAgent === 'gpt'){
-      // GPT: keep bar visible, add download link if we have a saved path
+      // update label
       var lines = (currentStreamText.match(/\n/g) || []).length;
       if(currentProgressLabel){
         currentProgressLabel.textContent = '✓ ' + currentStreamTokens + ' tok · ' + lines + ' righe';
       }
-      if(lastSavedPath && currentProgressEl){
-        var dl = document.createElement('a');
-        dl.className = 'gpt-download';
-        dl.href = '/download?path=' + encodeURIComponent(lastSavedPath);
-        dl.target = '_blank';
-        dl.innerHTML = '⬇ Scarica file generati';
-        currentProgressEl.appendChild(dl);
-      }
-      // Don't fade GPT bar
+      // File chips will be injected by the file_saved event handler
+      // Store reference so file_saved can populate them
+      pendingChipsEl = currentGptChipsEl;
     } else {
-      // Claude: fade out
+      // Claude: fade out progress bar
       var el = currentProgressEl;
       setTimeout(function(){
         if(el && el.parentNode){
@@ -586,10 +726,7 @@ function endStream(){
       }, 600);
     }
   }
-  // Restore GPT body visibility (was hidden during streaming)
-  if(currentStreamAgent === 'gpt' && currentStreamBody){
-    currentStreamBody.style.display = '';
-  }
+  // GPT body stays hidden — code is shown via modal, not inline
   currentStreamBody = null;
   currentStreamText = '';
   currentStreamAgent = null;
@@ -597,6 +734,7 @@ function endStream(){
   currentProgressEl = null;
   currentProgressBar = null;
   currentProgressLabel = null;
+  currentGptChipsEl = null;
 }
 
 // ── Confirm card ───────────────────────────
@@ -716,6 +854,7 @@ async function stopRun(){
   setStatus('interrotto');
   addSimpleMsg('system', '⛔ Task interrotto dall\'utente.');
   document.getElementById('stopBtn').classList.remove('visible');
+  document.getElementById('iterBadge').classList.remove('visible');
   document.getElementById('runBtn').disabled        = false;
   document.getElementById('newBtn').style.display   = 'flex';
 }
@@ -733,6 +872,7 @@ function newTask(){
   // nasconde done banner e cost bar
   document.getElementById('doneBanner').classList.remove('show');
   document.getElementById('stopBtn').classList.remove('visible');
+  document.getElementById('iterBadge').classList.remove('visible');
   const cb = document.getElementById('continueBox'); if(cb) cb.style.display='block';
   const ci = document.getElementById('continueInput'); if(ci) ci.value='';
   document.getElementById('costBar').classList.remove('visible');
@@ -796,6 +936,7 @@ async function startRun(){
 
 // ── Parallel Dashboard ────────────────────
 var parallelDashEl = null;
+var parallelChipsEl = null;
 
 function showParallelDashboard(chunks){
   removePlaceholder();
@@ -838,8 +979,17 @@ function showParallelDashboard(chunks){
   msgRow.appendChild(dash);
 
   wrapper.appendChild(msgRow);
+
+  // chips area populated by file_saved when parallel run completes
+  var parallelChips = document.createElement('div');
+  parallelChips.className = 'gpt-files-wrap';
+  parallelChips.id = 'parallel-chips';
+  parallelChips.style.cssText = 'margin-top:6px;padding-left:38px'; // align with dashboard (past avatar)
+  wrapper.appendChild(parallelChips);
+
   document.getElementById('messages').appendChild(wrapper);
   parallelDashEl = dash;
+  parallelChipsEl = parallelChips;
   scrollFeed();
 }
 
@@ -877,6 +1027,114 @@ function finalizeParallelDashboard(completed, failed){
   var spark = parallelDashEl.querySelector('.spark');
   if(spark) spark.style.animation = 'none';
   parallelDashEl = null;
+}
+
+// ── Code Modal ─────────────────────────────
+function extToLang(filename){
+  var ext = (filename.split('.').pop() || '').toLowerCase();
+  var map = {py:'python',js:'javascript',ts:'typescript',html:'html',css:'css',
+             json:'json',md:'markdown',sh:'bash',yaml:'yaml',yml:'yaml',
+             toml:'toml',txt:'text',rs:'rust',go:'go',java:'java',rb:'ruby'};
+  return map[ext] || ext || 'code';
+}
+
+function openCodeModal(filename, code){
+  document.getElementById('modalFilename').textContent = filename;
+  document.getElementById('modalLang').textContent = extToLang(filename);
+  // Add line numbers
+  var lines = code.split('\n');
+  var html = lines.map(function(l, i){
+    return '<span class="ln">' + (i+1) + '</span>' + escHtml(l);
+  }).join('\n');
+  document.getElementById('modalCode').innerHTML = html;
+  document.getElementById('modalCopyBtn').textContent = 'Copia';
+  document.getElementById('modalCopyBtn').className = 'code-modal-copy';
+  document.getElementById('codeModal').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeCodeModal(e){
+  if(e.target === document.getElementById('codeModal')){
+    closeCodeModalDirect();
+  }
+}
+
+function closeCodeModalDirect(){
+  document.getElementById('codeModal').classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+function copyModalCode(){
+  var code = document.getElementById('modalCode').innerText;
+  navigator.clipboard.writeText(code).then(function(){
+    var btn = document.getElementById('modalCopyBtn');
+    btn.textContent = '✓ Copiato!';
+    btn.className = 'code-modal-copy copied';
+    setTimeout(function(){ btn.textContent='Copia'; btn.className='code-modal-copy'; }, 2000);
+  });
+}
+
+// Keyboard: ESC closes modal
+document.addEventListener('keydown', function(e){
+  if(e.key === 'Escape') closeCodeModalDirect();
+});
+
+// ── File chips builder ─────────────────────
+function buildFileChips(container, files, projPath){
+  if(!container) return;
+  container.innerHTML = '';
+
+  // Fetch file contents from server for modal viewing
+  files.forEach(function(filePath){
+    var parts = filePath.replace(/\\/g,'/').split('/');
+    var filename = parts.pop();
+    var relPath  = parts.slice(-2).concat([filename]).join('/'); // last 2 dirs + filename
+
+    var ext = (filename.split('.').pop() || '').toLowerCase();
+    var extLabels = {py:'py',js:'js',ts:'ts',html:'html',css:'css',json:'json',
+                     md:'md',sh:'sh',yaml:'yml',yml:'yml',toml:'toml',txt:'txt',
+                     rs:'rs',go:'go'};
+    var extLabel = extLabels[ext] || ext;
+
+    var chip = document.createElement('button');
+    chip.className = 'file-chip';
+    chip.innerHTML =
+      '<span class="chip-icon">📄</span>' +
+      '<span>' + relPath + '</span>' +
+      '<span class="chip-ext">' + extLabel + '</span>';
+
+    chip.onclick = function(){
+      // fetch file content via /file_content route, fallback to codeStore
+      if(codeStore[filePath]){
+        openCodeModal(filename, codeStore[filePath]);
+      } else {
+        fetch('/file_content?path=' + encodeURIComponent(filePath))
+          .then(function(r){ return r.json(); })
+          .then(function(d){
+            if(d.content !== undefined){
+              codeStore[filePath] = d.content;
+              openCodeModal(filename, d.content);
+            } else {
+              openCodeModal(filename, '// Impossibile leggere il file: ' + (d.error || 'errore sconosciuto'));
+            }
+          })
+          .catch(function(err){
+            openCodeModal(filename, '// Errore di rete: ' + err.message);
+          });
+      }
+    };
+    container.appendChild(chip);
+  });
+
+  // Download all zip chip
+  if(projPath){
+    var dlChip = document.createElement('a');
+    dlChip.className = 'file-chip file-chip-dl';
+    dlChip.href = '/download?path=' + encodeURIComponent(projPath);
+    dlChip.target = '_blank';
+    dlChip.innerHTML = '<span class="chip-icon">⬇</span><span>Scarica ZIP</span>';
+    container.appendChild(dlChip);
+  }
 }
 
 // ── Event handler ──────────────────────────
@@ -927,7 +1185,10 @@ function handleEvent(type, d){
       break;
 
     case 'iteration_start':
-      addSimpleMsg('system', '── Iterazione ' + d.n + ' / ' + d.max + ' ──');
+      // Update the floating badge — no bubble in the feed
+      document.getElementById('iterBadge').classList.add('visible');
+      document.getElementById('iterLabel').textContent = 'iter ' + d.n + ' / ' + d.max;
+      document.getElementById('iterFill').style.width = Math.round((d.n / d.max) * 100) + '%';
       break;
 
     case 'claude_result':
@@ -983,15 +1244,23 @@ function handleEvent(type, d){
 
     case 'file_saved':
       lastSavedPath = d.path;
+      lastSavedFiles = d.files || [];
+      // Populate chips — single GPT bubble
+      if(pendingChipsEl){
+        buildFileChips(pendingChipsEl, lastSavedFiles, lastSavedPath);
+        pendingChipsEl = null;
+      }
+      // Populate chips — parallel dashboard
+      if(parallelChipsEl){
+        buildFileChips(parallelChipsEl, lastSavedFiles, lastSavedPath);
+        parallelChipsEl = null;
+      }
+      // Compact system note
       if(d.multi_file && d.files && d.files.length > 1){
-        const fileList = d.files.map(f => {
-          const fp = f.split('\\').join('/'); const parts = fp.split('/');
-          return '<code>' + parts.slice(-2).join('/') + '</code>';
-        }).join(', ');
-        addSimpleMsg('system', '📁 Progetto salvato in <code>' + d.path.split('\\').join('/').split('/').pop() + '/</code> — ' + d.files.length + ' file: ' + fileList);
+        addSimpleMsg('system', '📁 ' + d.files.length + ' file salvati in <code>' + d.path.replace(/\\/g,'/').split('/').pop() + '/</code>');
       } else {
-        const fname = (d.files && d.files[0]) ? d.files[0].split('\\').join('/').split('/').pop() : d.path;
-        addSimpleMsg('system', '💾 Salvato: <code>' + fname + '</code>');
+        var fname2 = (d.files && d.files[0]) ? d.files[0].replace(/\\/g,'/').split('/').pop() : d.path;
+        addSimpleMsg('system', '💾 Salvato: <code>' + fname2 + '</code>');
       }
       break;
 
@@ -1006,6 +1275,7 @@ function handleEvent(type, d){
     case 'loop_end':
       setStatus('completato');
       document.getElementById('stopBtn').classList.remove('visible');
+      document.getElementById('iterBadge').classList.remove('visible');
       document.getElementById('runBtn').disabled = false;
       const banner = document.getElementById('doneBanner');
       document.getElementById('doneSummary').textContent = d.summary || '';
@@ -1025,6 +1295,7 @@ function handleEvent(type, d){
     case 'error':
       setStatus('errore');
       document.getElementById('stopBtn').classList.remove('visible');
+      document.getElementById('iterBadge').classList.remove('visible');
       document.getElementById('runBtn').disabled = false;
       addSimpleMsg('system', '❌ ' + d.message);
       break;
@@ -1032,6 +1303,7 @@ function handleEvent(type, d){
     case 'timeout':
       setStatus('timeout');
       document.getElementById('stopBtn').classList.remove('visible');
+      document.getElementById('iterBadge').classList.remove('visible');
       document.getElementById('runBtn').disabled = false;
       addSimpleMsg('system', '⏱ Timeout — nessuna risposta ricevuta.');
       break;
@@ -1082,6 +1354,14 @@ async function sendContinue(){
   setStatus('riprendendo...');
 }
 </script>
+<div class="iter-badge" id="iterBadge">
+  <div class="iter-pill">
+    <span id="iterLabel">iter 1 / 10</span>
+    <div class="iter-progress-track">
+      <div class="iter-progress-fill" id="iterFill" style="width:10%"></div>
+    </div>
+  </div>
+</div>
 <button class="stop-fab" id="stopBtn" onclick="stopRun()">
   <svg viewBox="0 0 16 16" style="width:11px;height:11px;fill:white"><rect x="2" y="2" width="12" height="12" rx="1.5"/></svg>
   Stop
