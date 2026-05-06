@@ -59,6 +59,7 @@ You →  "Build a web application monitoring system with daemon process,
 | 📁 **Multi-file structure** | Code saved in the exact folder structure planned by Claude |
 | ⬇️ **Direct download** | Download the project as a `.zip` at the end of each run |
 | 🔁 **Auto-continuation** | If GPT output is truncated, it resumes automatically from where it left off |
+| 🐳 **Container-ready** | Multi-stage Chainguard image, runs anywhere with Docker |
 
 ---
 
@@ -88,11 +89,13 @@ The classifier always uses **Claude Sonnet 4.6** regardless of tier (cost < $0.0
 
 ## Installation
 
+### Option A — Python (local dev)
+
 **Prerequisites:** Python 3.10+, Anthropic and OpenAI API keys
 
 ```bash
 # 1. Install dependencies
-pip install flask anthropic openai python-dotenv
+pip install flask anthropic openai python-dotenv gunicorn
 
 # 2. Set your keys in .env
 ANTHROPIC_API_KEY=sk-ant-...
@@ -107,6 +110,46 @@ Open **http://localhost:5000** — Ettorino does the rest.
 
 ---
 
+### Option B — Docker
+
+**Prerequisites:** Docker, Anthropic and OpenAI API keys
+
+```bash
+# 1. Clone and enter the repo
+git clone <repo-url> && cd ettorino
+
+# 2. Create your .env (never committed — used only by docker compose)
+cat > .env << EOF
+ANTHROPIC_API_KEY=sk-ant-...
+OPENAI_API_KEY=sk-...
+ETTORINO_VERSION=0.1.0
+EOF
+
+# 3. Build and run
+docker compose up --build
+```
+
+Open **http://localhost:8080**
+
+The `workspace/` folder is persisted in a named Docker volume (`ettorino_workspace`) so generated projects survive container restarts.
+
+#### Manual docker run (without compose)
+
+```bash
+docker build -t ettorino .
+docker run -p 8080:5000 \
+  -e ANTHROPIC_API_KEY=sk-ant-... \
+  -e OPENAI_API_KEY=sk-... \
+  -v ettorino_workspace:/app/workspace \
+  ettorino
+```
+
+> **Why `-w 1`?** The agent loop uses in-memory state per session (`event_queues`, `session_costs`, `human_responses`). Multiple workers = isolated processes = broken sessions. One worker + 16 threads handles all concurrent requests safely.
+
+> **Port note:** avoid port 6000 — Chrome and Edge block it (`ERR_UNSAFE_PORT`). Use 8080, 8888, or any port ≥ 1024 not in the browser unsafe list.
+
+---
+
 ## Project structure
 
 ```
@@ -118,7 +161,11 @@ ettorino/
 │   └── build_a_web_/
 │       ├── webmon/
 │       └── config.yaml
+├── Dockerfile              ← multi-stage Chainguard build (no shell in runtime)
+├── docker-compose.yml      ← ports, env vars, workspace volume
+├── requirements.txt
 ├── .env                    ← keys and configuration (do not commit)
+├── .dockerignore
 └── .gitignore
 ```
 
@@ -170,11 +217,12 @@ All events travel over **Server-Sent Events (SSE)** — no polling, no websocket
 ## Production
 
 ```bash
-pip install gunicorn
-gunicorn -w 1 --threads 8 ettorino_assistant:app
-```
+# Local
+gunicorn -w 1 --threads 16 --timeout 600 ettorino_assistant:app
 
-> `-w 1` is intentional: the agent loop uses in-memory state per session. Multiple workers = isolated sessions.
+# Docker (recommended)
+docker compose up -d
+```
 
 ---
 
@@ -182,6 +230,6 @@ gunicorn -w 1 --threads 8 ettorino_assistant:app
 
 - [ ] GPT-5 support when available via standard API
 - [ ] Automatic quality/cost benchmark per task
-- [ ] Session persistence on Redis
+- [ ] Session persistence on Redis (enables multi-worker scaling)
 - [ ] One-click deploy on Railway / Render
 - [ ] Plugin system for external tools (browser, terminal, git)
