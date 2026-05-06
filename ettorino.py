@@ -13,6 +13,9 @@ from dotenv import load_dotenv
 import ssl
 import httpx
 import urllib3
+import re
+from dataclasses import dataclass, field
+from typing import Optional
 
 # Silenzia i warning SSL (proxy aziendali con self-signed cert)
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -166,6 +169,105 @@ def wait_for_human(session_id: str, timeout: int = 300) -> str | None:
 # Usa sempre Sonnet per la classificazione: abbastanza smart, non troppo caro
 # ─────────────────────────────────────────────
 CLASSIFIER_MODEL = "claude-haiku-4-5"
+# ─────────────────────────────────────────────
+# CHUNK MANAGEMENT
+# ─────────────────────────────────────────────
+@dataclass
+class Chunk:
+    id: str
+    title: str
+    spec: str
+    dependencies: list = field(default_factory=list)  # IDs dei chunk da cui dipende
+    is_critical: bool = False
+
+@dataclass
+class ChunkResult:
+    chunk_id: str
+    code: str
+    error: Optional[str] = None
+
+class ChunkManager:
+    @staticmethod
+    def from_claude_result(result: dict) -> list:
+        """Parsa i chunk dal risultato JSON di Claude."""
+        return [
+            Chunk(
+                id=ch["id"],
+                title=ch["title"],
+                spec=ch["spec"],
+                dependencies=ch.get("dependencies", []),
+                is_critical=ch.get("is_critical", False),
+            )
+            for ch in result.get("parallel_chunks", [])
+        ]
+
+    @staticmethod
+    def validate(chunks: list) -> None:
+        ids = {c.id for c in chunks}
+        for c in chunks:
+            for dep in c.dependencies:
+                if dep not in ids:
+                    raise ValueError(f"Chunk '{c.id}': dipendenza '{dep}' non trovata")
+
+    @staticmethod
+    def execution_waves(chunks: list) -> list:
+        """Topological sort → lista di onde eseguibili in parallelo."""
+        remaining = {c.id: set(c.dependencies) for c in chunks}
+        waves = []
+        while remaining:
+            ready = [cid for cid, deps in remaining.items() if not deps]
+            if not ready:
+                raise ValueError(f"Ciclo nelle dipendenze: {list(remaining.keys())}")
+            waves.append(ready)
+            for cid in ready:
+                del remaining[cid]
+            for deps in remaining.values():
+                deps -= set(ready)
+        return waves
+
+    @staticmethod
+    def combine_code(results: dict) -> str:
+        """Combina i codici di tutti i chunk per la review di Claude."""
+        return "\n\n".join(
+            f"=== CHUNK {cid} ===\n{results[cid].code}"
+            for cid in sorted(results)
+            if results[cid].code
+        )
+
+    @staticmethod
+    def build_review_context(results: dict, iteration: int) -> str:
+        """Costruisce il contesto strutturato per la review parallela di Claude."""
+        summaries = []
+        for cid in sorted(results):
+            r = results[cid]
+            if r.error:
+                summaries.append(f"Chunk {cid}: ❌ ERRORE — {r.error}")
+            else:
+                files = re.findall(r"###\s*FILE\s*[:\-]?\s*([\w./\-]+\.\w+)", r.code)
+                lines = r.code.count("\n")
+                s = f"Chunk {cid}: ✅ {lines} righe"
+                if files:
+                    s += " — " + ", ".join(files[:6])
+                    if len(files) > 6:
+                        s += f" (+{len(files)-6} altri)"
+                summaries.append(s)
+
+        parts = [
+            f"Codice prodotto in parallelo (iterazione {iteration}):",
+            "SOMMARIO:\n" + "\n".join(summaries),
+            "\nCODICE COMPLETO PER CHUNK:",
+        ]
+        for cid in sorted(results):
+            r = results[cid]
+            parts.append(f"\n=== CHUNK {cid} ({len(r.code)} chars) ===\n{r.code}")
+        parts.append(
+            "\nVerifica: 1) file completi, 2) import incrociati corretti, "
+            "3) naming consistency, 4) interfacce compatibili. "
+            "Se tutto OK → done. Se problemi → fix con dettagli per chunk specifico."
+        )
+        return "\n".join(parts)
+
+
 
 def classify_task(client: anthropic.Anthropic, session_id: str, task: str, q: queue.Queue, silent: bool = False) -> dict:
     if not silent:
@@ -806,25 +908,46 @@ def run_implementer_parallel(anthropic_client: anthropic.Anthropic, openai_clien
             return cid, "", str(e)
 
     # Lancia i worker in parallelo (può essere chiamato più volte nel loop)
+    # Converti in oggetti Chunk se hanno dipendenze, altrimenti usa flat list
+    chunk_objs = [Chunk(id=ch["id"], title=ch["title"], spec=ch["spec"],
+                        dependencies=ch.get("dependencies", []),
+                        is_critical=ch.get("is_critical", False)) for ch in chunks]
+
+    # Calcola le onde di esecuzione (topological sort)
+    try:
+        ChunkManager.validate(chunk_objs)
+        waves = ChunkManager.execution_waves(chunk_objs)
+    except ValueError:
+        # Fallback: tutto in una wave unica se ci sono problemi col grafo
+        waves = [[ch["id"] for ch in chunks]]
+
     emit(q, "parallel_start", {
         "chunks": [{"id": ch["id"], "title": ch["title"]} for ch in chunks],
         "workers": min(MAX_WORKERS, len(chunks))
     })
-    time.sleep(0.3)  # lascia tempo al frontend di renderizzare la dashboard
-
-    # Pre-emit all chunk_start events synchronously so dashboard shows all workers as "waiting"
-    for ch in chunks:
-        emit(q, "parallel_chunk_start", {"chunk_id": ch["id"], "title": ch["title"]})
     time.sleep(0.2)
 
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        futures = {executor.submit(run_chunk, ch): ch["id"] for ch in chunks}
-        for future in as_completed(futures):
-            cid, code, err = future.result()
-            if err:
-                chunk_errors[cid] = err
-            else:
-                chunk_results[cid] = code
+    # Pre-emit tutti i chunk come "waiting" subito
+    for ch in chunks:
+        emit(q, "parallel_chunk_start", {"chunk_id": ch["id"], "title": ch["title"]})
+    time.sleep(0.15)
+
+    # Esegui onda per onda
+    for wave in waves:
+        wave_chunks = [ch for ch in chunks if ch["id"] in wave]
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+            futures = {executor.submit(run_chunk, ch): ch["id"] for ch in wave_chunks}
+            for future in as_completed(futures):
+                cid, code, err = future.result()
+                if err:
+                    chunk_errors[cid] = err
+                    # Se critico, interrompi
+                    chunk_obj = next((c for c in chunk_objs if c.id == cid), None)
+                    if chunk_obj and chunk_obj.is_critical:
+                        executor.shutdown(wait=False, cancel_futures=True)
+                        break
+                else:
+                    chunk_results[cid] = code
 
     emit(q, "parallel_end", {
         "completed": list(chunk_results.keys()),
@@ -1072,71 +1195,27 @@ def run_agent_loop(session_id: str, task: str, q: queue.Queue):
                        + get_project_files_summary(task))
 
         elif status == "implement_parallel":
-            chunks = result.get("parallel_chunks", [])
-            if not chunks or len(chunks) < 2:
+            chunks_raw = result.get("parallel_chunks", [])
+            chunk_results = {}
+            if not chunks_raw or len(chunks_raw) < 2:
                 # fallback a implement normale se chunks mancanti
                 spec = result.get("spec", "") or "Implementa il task come specificato."
                 emit(q, "spec_ready", {"spec": spec})
                 code = run_implementer(claude_client, openai_client, session_id, task, spec, "",
                                      iteration, implementer_model, q)
+                context = (f"Codice prodotto (iterazione {iteration}):\n```python\n{code}\n```\n"
+                           "Verifica correttezza e completezza rispetto al task originale."
+                           + get_project_files_summary(task))
             else:
-                chunk_results = run_implementer_parallel(
-                    claude_client, openai_client, session_id, task, chunks, iteration, implementer_model, q
+                raw_results = run_implementer_parallel(
+                    claude_client, openai_client, session_id, task, chunks_raw, iteration, implementer_model, q
                 )
-                # Combina tutti i chunk per il contesto di review
-                combined = "\n\n".join(
-                    f"=== CHUNK {cid} ===\n{chunk_results[cid]}"
-                    for cid in sorted(chunk_results.keys())
-                    if chunk_results.get(cid)
-                )
-                code = combined
-
-            # Costruisci contesto completo per Claude Integrator
-            # Usa un approccio strutturato: sommario + codice chunk per chunk
-            if chunk_results:
-                # Sommario strutturato: file prodotti da ogni chunk
-                import re as _re2
-                chunk_summaries = []
-                for cid in sorted(chunk_results.keys()):
-                    chunk_code = chunk_results.get(cid, "")
-                    files_in_chunk = _re2.findall(
-                        r"###\s*FILE\s*[:\-]?\s*([\w./\-]+\.\w+)",
-                        chunk_code
-                    )
-                    lines_count = chunk_code.count("\n")
-                    summary = f"Chunk {cid}: {len(files_in_chunk)} file, {lines_count} righe"
-                    if files_in_chunk:
-                        summary += " — " + ", ".join(files_in_chunk[:8])
-                        if len(files_in_chunk) > 8:
-                            summary += f" (+{len(files_in_chunk)-8} altri)"
-                    chunk_summaries.append(summary)
-
-                # Contesto completo ma gestibile:
-                # - Sommario in cima
-                # - Poi ogni chunk separato (Claude può leggere tutto)
-                context_parts = [
-                    f"Codice prodotto in parallelo (iterazione {iteration}):",
-                    f"SOMMARIO CHUNK:\n" + "\n".join(chunk_summaries),
-                    "\nCODICE COMPLETO PER CHUNK:",
-                ]
-                for cid in sorted(chunk_results.keys()):
-                    chunk_code = chunk_results.get(cid, "")
-                    context_parts.append(
-                        f"\n=== CHUNK {cid} ({len(chunk_code)} chars) ===\n{chunk_code}"
-                    )
-                context_parts.append(
-                    "\nVerifica: 1) ogni file è completo, 2) import incrociati corretti, "
-                    "3) naming consistency, 4) interfacce compatibili tra chunk. "
-                    "Se tutto OK → status done. Se ci sono problemi → status fix con feedback specifico."
-                )
-                context_parts.append(get_project_files_summary(task))
-                context = "\n".join(context_parts)
-            else:
-                context = (
-                    f"Codice prodotto (iterazione {iteration}):\n```python\n{code}\n```\n"
-                    "Verifica correttezza e completezza rispetto al task originale."
-                    + get_project_files_summary(task)
-                )
+                # Converti in ChunkResult per build_review_context
+                from dataclasses import fields as dc_fields
+                chunk_results = {cid: ChunkResult(chunk_id=cid, code=code_str)
+                                 for cid, code_str in raw_results.items()}
+                code = ChunkManager.combine_code(chunk_results)
+                context = ChunkManager.build_review_context(chunk_results, iteration) + get_project_files_summary(task)
 
         elif status == "fix":
             feedback = result.get("feedback", "")
