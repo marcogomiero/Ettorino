@@ -4,6 +4,8 @@
 
 Claude reasons. GPT implements. Ettorino orchestrates everything.
 
+![Ettorino UI](docs/screen_ui.png)
+
 ---
 
 ## What happens when you run a task
@@ -43,6 +45,20 @@ You →  "Build a web application monitoring system with daemon process,
    webmon/daemon.py
    config.example.yaml
 ```
+
+---
+
+## Screenshots
+
+### Routing & model selection
+The router classifies the task difficulty and proposes the optimal model pair. You can swap either model before the loop starts.
+
+![Confirm card — difficulty MEDIUM, model selection](docs/screen_confirm.png)
+
+### Parallel execution
+On hard tasks, 3 implementer workers run simultaneously. Each worker gets its own chunk spec, streams its output, and saves files directly to the workspace.
+
+![Parallel dashboard — 3 workers completed, file chips](docs/screen_parallel.png)
 
 ---
 
@@ -161,6 +177,10 @@ ettorino/
 │   └── build_a_web_/
 │       ├── webmon/
 │       └── config.yaml
+├── docs/
+│   ├── screen_ui.png
+│   ├── screen_confirm.png
+│   └── screen_parallel.png
 ├── Dockerfile              ← multi-stage Chainguard build (no shell in runtime)
 ├── docker-compose.yml      ← ports, env vars, workspace volume
 ├── requirements.txt
@@ -201,9 +221,10 @@ POST /run
         │
         ├── claude_reason()     Claude streams reasoning (only "thoughts" shown in UI)
         │     │
-        │     ├── implement          → gpt_implement() sequential
-        │     ├── implement_parallel → gpt_implement_parallel() × 3 workers
-        │     ├── fix               → gpt_implement() with corrective feedback
+        │     ├── implement          → run_implementer() sequential
+        │     ├── implement_parallel → run_implementer_parallel() × 3 workers
+        │     │                        wave-scheduled via ChunkManager.execution_waves()
+        │     ├── fix               → run_implementer() with corrective feedback
         │     ├── ask               → waits for user input via SSE
         │     └── done              → saves state, emits loop_end
         │
