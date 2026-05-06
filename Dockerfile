@@ -28,7 +28,7 @@ COPY --from=builder /app/venv /app/venv
 # workspace vuota dal builder — sovrascritta dal volume mount in produzione
 COPY --from=builder /app/workspace /app/workspace
 
-COPY ettorino_assistant.py .
+COPY ettorino.py .
 COPY templates/ templates/
 
 EXPOSE 5000
