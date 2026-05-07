@@ -974,7 +974,14 @@ function nowTs(){
   return '['+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')+':'+String(d.getSeconds()).padStart(2,'0')+']';
 }
 
-function scrollFeed(){ window.scrollTo({top:document.body.scrollHeight,behavior:'smooth'}); }
+var _scrollTimeout = null;
+function scrollFeed(){
+  if (_scrollTimeout) return;
+  _scrollTimeout = setTimeout(function() {
+    window.scrollTo({top:document.body.scrollHeight,behavior:'smooth'});
+    _scrollTimeout = null;
+  }, 100);
+}
 
 // ── Log row builder ────────────────────────
 var AGENT_META = {
