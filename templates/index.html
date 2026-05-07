@@ -20,6 +20,34 @@
       --text:      #111;
       --mono:      'JetBrains Mono', 'Courier New', monospace;
     }
+    /* dark mode */
+    [data-theme="dark"]{
+      --border:    #2a2a2a;
+      --bg:        #0e0e0e;
+      --bg2:       #181818;
+      --text:      #e8e8e8;
+      --gray:      #666;
+      --red-pale:  rgba(194,27,23,.12);
+      --green-bg:  rgba(26,127,55,.12);
+    }
+    [data-theme="dark"] .topbar{background:rgba(14,14,14,.97)}
+    [data-theme="dark"] .ex-modal,[data-theme="dark"] .code-modal,[data-theme="dark"] .confirm-card,
+    [data-theme="dark"] .answer-box,[data-theme="dark"] .done-banner,[data-theme="dark"] .parallel-dash,
+    [data-theme="dark"] .worker-card{background:var(--bg);border-color:var(--border)}
+    [data-theme="dark"] .rationale{background:var(--bg2)}
+    [data-theme="dark"] .model-selects select{background:var(--bg2);color:var(--text);border-color:var(--border)}
+    [data-theme="dark"] .iter-pill{background:var(--bg)}
+
+    /* toolbar (lang + dark) */
+    .toolbar-right{display:flex;align-items:center;gap:6px;margin-left:auto}
+    .tb-icon-btn{
+      display:flex;align-items:center;gap:5px;
+      background:transparent;border:1px solid var(--border);
+      padding:5px 10px;font-family:var(--mono);font-size:.72rem;font-weight:600;
+      color:var(--gray);cursor:pointer;transition:all .12s;
+    }
+    .tb-icon-btn:hover{border-color:var(--red);color:var(--text)}
+    .tb-icon-btn.active{border-color:var(--text);color:var(--text);background:var(--bg2)}
     *{box-sizing:border-box;margin:0;padding:0}
     html,body{
       font-family:var(--mono);
@@ -326,6 +354,61 @@
     }
     .continue-btn:hover{background:#144a26}
 
+    /* ─── EXAMPLES MODAL ─── */
+    .ex-overlay{
+      display:none;position:fixed;inset:0;z-index:200;
+      background:rgba(0,0,0,.45);
+      align-items:flex-start;justify-content:center;
+      padding:5rem 1.5rem 1.5rem;
+    }
+    .ex-overlay.open{display:flex}
+    .ex-modal{
+      background:var(--bg);border-top:3px solid var(--red);
+      box-shadow:0 20px 60px rgba(0,0,0,.18);
+      width:100%;max-width:720px;
+      animation:mIn .15s ease;
+    }
+    .ex-header{
+      display:flex;align-items:center;justify-content:space-between;
+      padding:.8rem 1.1rem;border-bottom:1px solid var(--border);
+    }
+    .ex-title{font-size:.72rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--red)}
+    .ex-close{
+      width:24px;height:24px;border:1px solid var(--border);background:var(--bg2);
+      color:var(--gray);font-size:.9rem;cursor:pointer;
+      display:flex;align-items:center;justify-content:center;
+    }
+    .ex-close:hover{background:var(--border);color:var(--text)}
+    .ex-list{padding:.8rem}
+    .ex-card{
+      border:1px solid var(--border);border-left:3px solid var(--border);
+      padding:.75rem .9rem;margin-bottom:.6rem;cursor:pointer;
+      transition:border-color .12s,background .12s;
+      display:flex;gap:.9rem;align-items:flex-start;
+    }
+    .ex-card:last-child{margin-bottom:0}
+    .ex-card:hover{background:var(--bg2)}
+    .ex-card.easy  {border-left-color:var(--green)}
+    .ex-card.medium{border-left-color:#e08800}
+    .ex-card.hard  {border-left-color:var(--red)}
+    .ex-card-left{flex:1;min-width:0}
+    .ex-diff{
+      font-size:.6rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+      margin-bottom:.3rem;display:inline-block;padding:1px 7px;border:1px solid;
+    }
+    .ex-diff.easy  {color:var(--green);border-color:var(--green);background:rgba(26,127,55,.07)}
+    .ex-diff.medium{color:#b86c00;border-color:#e08800;background:rgba(224,136,0,.07)}
+    .ex-diff.hard  {color:var(--red);border-color:var(--red);background:var(--red-pale)}
+    .ex-text{font-size:.8rem;color:var(--text);line-height:1.55}
+    .ex-use{
+      flex-shrink:0;align-self:center;
+      background:var(--text);color:#fff;border:none;
+      padding:6px 13px;font-family:var(--mono);font-size:.73rem;font-weight:700;
+      cursor:pointer;letter-spacing:.04em;transition:background .12s;white-space:nowrap;
+    }
+    .ex-use:hover{background:var(--red)}
+    .ex-hint{font-size:.65rem;color:#bbb;padding:.5rem .9rem .7rem;border-top:1px solid var(--border)}
+
     /* ─── PLACEHOLDER ─── */
     .placeholder-msg{
       color:#ccc;font-size:.78rem;padding:1.5rem 0;
@@ -368,6 +451,11 @@
     .worker-bar.done   {background:var(--green);width:100%!important;animation:none}
     .worker-bar.error  {background:var(--red);width:100%!important;animation:none}
     .worker-lines{font-size:.62rem;color:var(--gray);margin-top:2px}
+    .worker-stream-bar-wrap{height:2px;background:var(--bg2);border-radius:999px;margin-top:.4rem;overflow:hidden}
+    .worker-stream-bar{height:100%;border-radius:999px;width:0%;background:var(--green);transition:width .3s ease}
+    .worker-stream-bar.running{animation:ind 1.4s ease-in-out infinite}
+    .worker-stream-bar.done{width:100%!important;animation:none}
+    .worker-tok{font-size:.6rem;color:var(--gray);font-family:var(--mono);margin-top:2px;display:flex;justify-content:space-between}
 
     /* ─── FILE CHIPS ─── */
     .gpt-files-wrap{margin-top:7px;display:flex;flex-wrap:wrap;gap:5px}
@@ -484,6 +572,18 @@
   </div>
 </div>
 
+<!-- EXAMPLES MODAL -->
+<div class="ex-overlay" id="exOverlay" onclick="closeExamplesOutside(event)">
+  <div class="ex-modal">
+    <div class="ex-header">
+      <span class="ex-title" data-i18n="exTitle">// Task examples</span>
+      <button class="ex-close" onclick="closeExamples()">×</button>
+    </div>
+    <div class="ex-list" id="exList"></div>
+    <div class="ex-hint" data-i18n="exHint">// click "Use this" to load the task into the prompt without running it</div>
+  </div>
+</div>
+
 <!-- TOP BAR -->
 <div class="topbar" id="costBar">
   <div class="topbar-inner" id="costInner">
@@ -497,7 +597,7 @@
       <span class="tb-val" id="gptCost">$0.0000</span>
       <span class="tb-tok" id="gptTok">0 tok</span>
     </div>
-    <div class="tb-total">Totale: <span id="totalCost">$0.0000</span></div>
+    <div class="tb-total"><span data-i18n="totalLabel">Total</span>: <span id="totalCost">$0.0000</span></div>
     <div class="tb-timer" id="costTimer" style="display:none">
       <div class="tdot" id="timerDot"></div>
       <span class="tval" id="timerVal">0:00</span>
@@ -508,22 +608,28 @@
 <!-- HEADER -->
 <div class="header">
   <div class="wordmark">Ettorino<span>.</span></div>
-  <div class="tagline">Claude × GPT · difficulty-aware router</div>
+  <div class="tagline" data-i18n="tagline">Claude × GPT · difficulty-aware router</div>
   <div class="version">v <span id="versionSpan">{{ version }}</span></div>
+  <div class="toolbar-right">
+    <button class="tb-icon-btn active" id="btnLangEN" onclick="setLang('en')" title="English">🇬🇧 EN</button>
+    <button class="tb-icon-btn" id="btnLangIT" onclick="setLang('it')" title="Italiano">🇮🇹 IT</button>
+    <button class="tb-icon-btn" id="btnDark" onclick="toggleDark()" title="Dark mode">◐</button>
+  </div>
 </div>
 
 <!-- COMMAND -->
 <div class="command">
-  <div class="cmd-label">Descrivi il task</div>
+  <div class="cmd-label" data-i18n="cmdLabel">Describe the task</div>
   <textarea id="taskInput" rows="3"
-    placeholder="Es: Costruisci un CLI tool Python che salva note con timestamp..."></textarea>
+    placeholder="" data-i18n-placeholder="taskPlaceholder"></textarea>
   <div class="cmd-footer">
-    <span class="status-txt" id="statusText">pronto</span>
+    <span class="status-txt" id="statusText" data-i18n="statusReady">ready</span>
     <div class="cmd-btns">
-      <button class="new-btn" id="newBtn" onclick="newTask()" style="display:none">↺ Nuovo task</button>
+      <button class="new-btn" id="newBtn" onclick="newTask()" style="display:none" data-i18n="btnNew">↺ New task</button>
+      <button class="new-btn" id="exBtn" onclick="openExamples()" data-i18n="btnExamples">⚡ Examples</button>
       <button class="run-btn" id="runBtn" onclick="startRun()">
         <svg viewBox="0 0 16 16" style="width:11px;height:11px;fill:white"><polygon points="4,2 14,8 4,14"/></svg>
-        Avvia
+        <span data-i18n="btnRun">Run</span>
       </button>
     </div>
   </div>
@@ -531,23 +637,23 @@
 
 <!-- FEED -->
 <div class="feed-wrap">
-  <div class="feed-label"><div class="live-dot"></div>live feed</div>
+  <div class="feed-label"><div class="live-dot"></div><span data-i18n="liveFeed">live feed</span></div>
   <div class="log-list" id="messages">
-    <div class="placeholder-msg" id="placeholder">in attesa di un task...</div>
+    <div class="placeholder-msg" id="placeholder" data-i18n="placeholder">// waiting for a task...</div>
   </div>
 
   <!-- DONE BANNER -->
   <div class="done-banner" id="doneBanner">
-    <h3>✓ Task completato</h3>
+    <h3 data-i18n="doneTitle">✓ Task completed</h3>
     <p id="doneSummary"></p>
     <div class="done-cost" id="doneCost"></div>
     <div class="continue-box" id="continueBox">
-      <div class="continue-lbl">vuoi modificare o aggiungere qualcosa?</div>
+      <div class="continue-lbl" data-i18n="continueLabel">want to modify or add something?</div>
       <div class="continue-row">
         <input class="continue-input" id="continueInput"
-          placeholder="Es: aggiungi il comando 'delete', oppure 'aggiungi colori ANSI'..."
+          placeholder="" data-i18n-placeholder="continuePlaceholder"
           onkeydown="if(event.key==='Enter')sendContinue()"/>
-        <button class="continue-btn" onclick="sendContinue()">Continua →</button>
+        <button class="continue-btn" onclick="sendContinue()" data-i18n="btnContinue">Continue →</button>
       </div>
     </div>
   </div>
@@ -572,6 +678,251 @@
 let sessionId = null;
 let es = null;
 const costs = {anthropic:{cost:0,tokens:0}, openai:{cost:0,tokens:0}, total:0};
+var isParallel = false;
+
+// ── i18n ───────────────────────────────────────
+var LANG = 'en';
+
+var STRINGS = {
+  en: {
+    tagline:           'Claude × GPT · difficulty-aware router',
+    cmdLabel:          'Describe the task',
+    taskPlaceholder:   'E.g. Build a Python CLI tool that saves notes with timestamps...',
+    statusReady:       'ready',
+    statusRunning:     'running...',
+    statusClassifying: 'classifying...',
+    statusWaiting:     'waiting for input...',
+    statusDone:        'completed',
+    statusError:       'error',
+    statusTimeout:     'timeout',
+    statusStopped:     'stopped',
+    btnRun:            'Run',
+    btnNew:            '↺ New task',
+    btnExamples:       '⚡ Examples',
+    btnContinue:       'Continue →',
+    btnUse:            'Use this →',
+    btnStop:           'Stop',
+    btnCopy:           'Copy',
+    btnCopied:         '✓ Copied!',
+    liveFeed:          'live feed',
+    placeholder:       '// waiting for a task...',
+    doneTitle:         '✓ Task completed',
+    continueLabel:     'want to modify or add something?',
+    continuePlaceholder: 'E.g. add a delete command, or add ANSI colors...',
+    exTitle:           '// Task examples',
+    exHint:            '// click "Use this" to load the task into the prompt without running it',
+    thinking:          'thinking...',
+    writing:           'writing code...',
+    iterLabel:         'iter',
+    of:                '/',
+    totalLabel:        'Total',
+    confirmTitle:      '⚡ Confirm models',
+    confirmDifficulty: 'Difficulty',
+    confirmCost:       'Estimated cost',
+    confirmReasoner:   'Reasoner',
+    confirmImpl:       'Implementer',
+    btnStart:          '▶ Run',
+    btnChange:         'Change & run',
+    answerPlaceholder: 'Your answer...',
+    answerBtn:         'Send',
+    parallelHeader:    'GPT workers in parallel',
+    parallelWaiting:   'queued...',
+    parallelDone:      'completed',
+    parallelFailed:    'failed',
+    parallelWorking:   'working...',
+    parallelIntegrating: '— Claude is integrating...',
+    sameModelWarn:     '⚠ Same model for both roles — works, but the loop is redundant.',
+    downloadZip:       '⬇ Download ZIP',
+    filesSaved:        'files saved in',
+    saved:             'Saved',
+    workers:           'workers completed',
+    claudeThinking:    'thinking...',
+    gptCoding:         'writing code...',
+    truncated:         '⚠ output truncated — resuming',
+    maxTruncated:      '⚠ max continuations reached — output may be incomplete',
+    errorPrefix:       '❌',
+    timeoutMsg:        '⏱ Timeout — no response received.',
+    stoppedMsg:        '⛔ Task stopped by user.',
+    modelsUpdated:     'Models updated →',
+    iterPrefix:        '── Iteration',
+    gptOffTrack:       'GPT off track — Claude corrects',
+    corrFeedback:      '🔧 Corrective feedback:',
+    realign:           '🎯 GPT realignment:',
+  },
+  it: {
+    tagline:           'Claude × GPT · difficulty-aware router',
+    cmdLabel:          'Descrivi il task',
+    taskPlaceholder:   'Es: Costruisci un CLI tool Python che salva note con timestamp...',
+    statusReady:       'pronto',
+    statusRunning:     'in esecuzione...',
+    statusClassifying: 'classifico...',
+    statusWaiting:     'in attesa risposta...',
+    statusDone:        'completato',
+    statusError:       'errore',
+    statusTimeout:     'timeout',
+    statusStopped:     'interrotto',
+    btnRun:            'Avvia',
+    btnNew:            '↺ Nuovo task',
+    btnExamples:       '⚡ Esempi',
+    btnContinue:       'Continua →',
+    btnUse:            'Usa questo →',
+    btnStop:           'Stop',
+    btnCopy:           'Copia',
+    btnCopied:         '✓ Copiato!',
+    liveFeed:          'live feed',
+    placeholder:       '// in attesa di un task...',
+    doneTitle:         '✓ Task completato',
+    continueLabel:     'vuoi modificare o aggiungere qualcosa?',
+    continuePlaceholder: 'Es: aggiungi il comando \'delete\', oppure \'aggiungi colori ANSI\'...',
+    exTitle:           '// Esempi di task',
+    exHint:            '// clicca "Usa questo" per caricare il task nel prompt senza avviarlo',
+    thinking:          'ragionando...',
+    writing:           'scrivendo codice...',
+    iterLabel:         'iter',
+    of:                '/',
+    totalLabel:        'Totale',
+    confirmTitle:      '⚡ Conferma modelli',
+    confirmDifficulty: 'Difficoltà',
+    confirmCost:       'Stima costo',
+    confirmReasoner:   'Reasoner',
+    confirmImpl:       'Implementer',
+    btnStart:          '▶ Avvia',
+    btnChange:         'Cambia e avvia',
+    answerPlaceholder: 'La tua risposta...',
+    answerBtn:         'Invia',
+    parallelHeader:    'worker GPT in parallelo',
+    parallelWaiting:   'in coda...',
+    parallelDone:      'completato',
+    parallelFailed:    'fallito',
+    parallelWorking:   'elaborando...',
+    parallelIntegrating: '— Claude ora integra...',
+    sameModelWarn:     '⚠ Stesso modello per entrambi i ruoli — funziona, ma il loop è ridondante.',
+    downloadZip:       '⬇ Scarica ZIP',
+    filesSaved:        'file salvati in',
+    saved:             'Salvato',
+    workers:           'worker completati',
+    claudeThinking:    'ragionando...',
+    gptCoding:         'scrivendo codice...',
+    truncated:         '⚠ output troncato — continuo',
+    maxTruncated:      '⚠ raggiunto limite massimo continuazioni — output potrebbe essere incompleto',
+    errorPrefix:       '❌',
+    timeoutMsg:        '⏱ Timeout — nessuna risposta ricevuta.',
+    stoppedMsg:        '⛔ Task interrotto dall\'utente.',
+    modelsUpdated:     'Modelli confermati →',
+    iterPrefix:        '── Iterazione',
+    gptOffTrack:       'GPT fuori binari — Claude corregge',
+    corrFeedback:      '🔧 Feedback correttivo:',
+    realign:           '🎯 Riallineamento GPT:',
+  }
+};
+
+function t(key){ return (STRINGS[LANG] || STRINGS['en'])[key] || key; }
+
+var EXAMPLES_EN = [
+  "Write a Python CLI script that saves notes with timestamps to a JSON file. Commands: add \"text\", list, delete <id>, search <keyword>. ANSI colors for output.",
+  "Build a Flask REST API to manage a todo list. Endpoints: full CRUD, filters by status and priority, JWT authentication, SQLite with SQLAlchemy, rate limiting, auto-generated Swagger documentation.",
+  "Build a personal finance tracker with: CSV import from major Italian banks (Intesa, Unicredit, Fineco) with auto-detection, transaction categorization engine with rule matching (regex + keyword scoring), monthly budget with alerts, SQLite + migration system, Flask REST API with JWT, CLI with rich tables, PDF report generation, Telegram bot for quick expense logging, full pytest test suite."
+];
+var EXAMPLES_IT = [
+  "Scrivi uno script Python CLI che salva note con timestamp su file JSON. Comandi: add \"testo\", list, delete <id>, search <keyword>. Colori ANSI per l'output.",
+  "Costruisci un'API REST Flask per gestire una lista di task (todo). Endpoint: CRUD completo, filtri per stato e priorità, autenticazione JWT, SQLite con SQLAlchemy, rate limiting, documentazione Swagger auto-generata.",
+  "Costruisci un sistema di personal finance tracker con: import CSV da banche italiane (Intesa, Unicredit, Fineco) con auto-detection del formato, motore di categorizzazione transazioni con rule matching (regex + keyword scoring), budget mensile con alert, SQLite + migration system, API REST Flask con JWT, CLI con rich tables, generazione PDF report, integrazione bot Telegram per log spese rapido, test suite pytest completa."
+];
+function getExamples(){ return LANG === 'it' ? EXAMPLES_IT : EXAMPLES_EN; }
+
+var DIFF_LABELS = {
+  en: ['Easy','Medium','Hard'],
+  it: ['Easy','Medium','Hard']
+};
+
+function renderExamples(){
+  var examples = getExamples();
+  var diffs = ['easy','medium','hard'];
+  var html = '';
+  for(var i=0;i<examples.length;i++){
+    html +=
+      '<div class="ex-card '+diffs[i]+'">' +
+        '<div class="ex-card-left">' +
+          '<div class="ex-diff '+diffs[i]+'">'+diffs[i].toUpperCase()+'</div>' +
+          '<div class="ex-text">'+examples[i]+'</div>' +
+        '</div>' +
+        '<button class="ex-use" onclick="useExample('+i+')">'+t('btnUse')+'</button>' +
+      '</div>';
+  }
+  document.getElementById('exList').innerHTML = html;
+}
+
+
+function applyLang(){
+  // static data-i18n elements
+  document.querySelectorAll('[data-i18n]').forEach(function(el){
+    var key = el.getAttribute('data-i18n');
+    el.textContent = t(key);
+  });
+  // placeholder attrs
+  document.querySelectorAll('[data-i18n-placeholder]').forEach(function(el){
+    el.placeholder = t(el.getAttribute('data-i18n-placeholder'));
+  });
+  // lang buttons active state
+  document.getElementById('btnLangEN').classList.toggle('active', LANG==='en');
+  document.getElementById('btnLangIT').classList.toggle('active', LANG==='it');
+  // html lang attr
+  document.documentElement.lang = LANG;
+  // rigenera esempi se il modal è aperto
+  if(document.getElementById('exOverlay').classList.contains('open')) renderExamples();
+  // persist
+  localStorage.setItem('ettorino_lang', LANG);
+}
+
+function setLang(lang){
+  LANG = lang;
+  applyLang();
+}
+
+// ── Dark mode ───────────────────────────────────
+var DARK = false;
+
+function toggleDark(){
+  DARK = !DARK;
+  document.documentElement.setAttribute('data-theme', DARK ? 'dark' : '');
+  document.getElementById('btnDark').classList.toggle('active', DARK);
+  localStorage.setItem('ettorino_dark', DARK ? '1' : '');
+}
+
+// ── Init from localStorage ──────────────────────
+(function(){
+  var savedLang = localStorage.getItem('ettorino_lang') || 'en';
+  var savedDark = localStorage.getItem('ettorino_dark') === '1';
+  LANG = savedLang;
+  if(savedDark){ DARK=true; document.documentElement.setAttribute('data-theme','dark'); document.getElementById('btnDark').classList.add('active'); }
+  applyLang();
+})();
+
+// ── Examples ──────────────────────────────────
+
+
+function openExamples(){
+  renderExamples();
+  document.getElementById('exOverlay').classList.add('open');
+  document.body.style.overflow='hidden';
+}
+
+
+function closeExamples(){
+  document.getElementById('exOverlay').classList.remove('open');
+  document.body.style.overflow='';
+}
+function closeExamplesOutside(e){
+  if(e.target===document.getElementById('exOverlay')) closeExamples();
+}
+function useExample(idx){
+  document.getElementById('taskInput').value = getExamples()[idx];
+  closeExamples();
+  document.getElementById('taskInput').focus();
+}
+document.addEventListener('keydown',function(e){
+  if(e.key==='Escape') closeExamples();
+});
 
 // ── Timer ──────────────────────────────────
 var timerStart = null;
@@ -607,7 +958,7 @@ function resetTimer(){
 // ── Helpers ────────────────────────────────
 function fmt(n){ return '$'+(n||0).toFixed(4); }
 function fmtTok(n){ return n>=1000?(n/1000).toFixed(1)+'k tok':n+' tok'; }
-function setStatus(t){ document.getElementById('statusText').textContent=t; }
+function setStatus(s){ document.getElementById('statusText').textContent=s; }
 function removePlaceholder(){ var p=document.getElementById('placeholder'); if(p)p.remove(); }
 function showCostBar(){ document.getElementById('costBar').classList.add('visible'); }
 function updateCostBar(){
@@ -718,7 +1069,7 @@ function startStreamBubble(agentKey, modelLabel){
     var bw = document.createElement('div'); bw.className='cp-bar-wrap';
     var b = document.createElement('div'); b.className='cp-bar indeterminate'; bw.appendChild(b);
     var lbl = document.createElement('div'); lbl.className='cp-label';
-    lbl.innerHTML='<span>ragionando...</span><span id="tok-count">0 tok</span>';
+    lbl.innerHTML='<span>'+t('claudeThinking')+'</span><span id="tok-count">0 tok</span>';
     prog.appendChild(bw); prog.appendChild(lbl);
     // Insert OUTSIDE body so body.innerHTML rewrites don't destroy the bar
     body.parentNode.insertBefore(prog, body.nextSibling);
@@ -730,7 +1081,7 @@ function startStreamBubble(agentKey, modelLabel){
     var gbw=document.createElement('div'); gbw.className='gp-bar-wrap';
     var gb=document.createElement('div'); gb.className='gp-bar'; gbw.appendChild(gb);
     var glbl=document.createElement('div'); glbl.className='gp-label';
-    glbl.innerHTML='<span>scrivendo codice...</span><span id="gpt-tok-count">0 tok · 0 righe</span>';
+    glbl.innerHTML='<span>'+t('gptCoding')+'</span><span id="gpt-tok-count">0 tok · 0 righe</span>';
     var gchips=document.createElement('div'); gchips.className='gpt-files-wrap'; gchips.id='gpt-chips-'+Date.now();
     gprog.appendChild(gbw); gprog.appendChild(glbl); gprog.appendChild(gchips);
     body.parentNode.insertBefore(gprog, body.nextSibling);
@@ -842,13 +1193,13 @@ function showConfirmCard(d){
     ? '<div class="rationale">'+d.model_rationale+'</div>' : '';
 
   card.innerHTML =
-    '<div class="cc-title">⚡ Conferma modelli</div>'+
+    '<div class="cc-title">'+t('confirmTitle')+'</div>'+
     '<div class="cc-row"><span class="cc-key">Difficoltà</span>'+
     '<span class="diff-tag '+d.difficulty+'">'+d.difficulty.toUpperCase()+'</span></div>'+
     '<div class="rationale">'+(d.reasoning||'')+'</div>'+
     '<div class="cc-row" style="margin-top:.3rem"><span class="cc-key">Stima costo</span>'+
     '<span class="cost-est">~'+fmt(d.estimated_cost)+'</span></div>'+
-    '<div class="cc-cols" style="margin-top:.6rem"><span>Reasoner</span><span>Implementer</span></div>'+
+    '<div class="cc-cols" style="margin-top:.6rem"><span>'+t('confirmReasoner')+'</span><span>'+t('confirmImpl')+'</span></div>'+
     '<div class="model-selects">'+
     '<select id="selReasoner" onchange="checkSameModel()">'+_reasonerOpts+'</select>'+
     '<select id="selImplementer" onchange="checkSameModel()">'+_implOpts+'</select>'+
@@ -856,8 +1207,8 @@ function showConfirmCard(d){
     '<div id="sameModelWarn" class="same-warn">⚠ Stesso modello per entrambi i ruoli — funziona, ma il loop è ridondante.</div>'+
     _rat+
     '<div class="cc-actions">'+
-    '<button class="btn-ok" onclick="confirmModels(false)">▶ Avvia</button>'+
-    '<button class="btn-chg" onclick="confirmModels(true)">Cambia e avvia</button>'+
+    '<button class="btn-ok" onclick="confirmModels(false)">'+t('btnStart')+'</button>'+
+    '<button class="btn-chg" onclick="confirmModels(true)">'+t('btnChange')+'</button>'+
     '</div>';
 
   body.appendChild(card);
@@ -893,8 +1244,8 @@ function showAnswerBox(question){
   box.innerHTML =
     '<div class="answer-q">❓ '+question+'</div>'+
     '<div class="answer-row">'+
-    '<input class="answer-input" id="ansInput" placeholder="La tua risposta..." onkeydown="if(event.key===\'Enter\')sendAnswer()"/>'+
-    '<button class="answer-btn" onclick="sendAnswer()">Invia</button></div>';
+    '<input class="answer-input" id="ansInput" placeholder="'+t('answerPlaceholder')+'" onkeydown="if(event.key===\'Enter\')sendAnswer()"/>'+
+    '<button class="answer-btn" onclick="sendAnswer()">'+t('answerBtn')+'</button></div>';
 
   body.appendChild(box);
   document.getElementById('ansInput')?.focus();
@@ -919,9 +1270,9 @@ function sendAnswer(){
 async function stopRun(){
   if(es){es.close();es=null;}
   if(sessionId){try{await fetch('/stop/'+sessionId,{method:'POST'});}catch(e){}}
-  setStatus('interrotto');
+  setStatus(t('statusStopped'));
   stopTimer(false);
-  addSimpleMsg('system','⛔ Task interrotto dall\'utente.');
+  addSimpleMsg('system',t('stoppedMsg'));
   document.getElementById('stopBtn').classList.remove('visible');
   document.getElementById('iterBadge').classList.remove('visible');
   document.getElementById('runBtn').disabled=false;
@@ -931,7 +1282,8 @@ async function stopRun(){
 function newTask(){
   if(es){es.close();es=null;}
   sessionId=null;
-  document.getElementById('messages').innerHTML='<div class="placeholder-msg" id="placeholder">in attesa di un task...</div>';
+  isParallel=false;
+  document.getElementById('messages').innerHTML='<div class="placeholder-msg" id="placeholder" data-i18n="placeholder">// waiting for a task...</div>';
   document.getElementById('doneBanner').classList.remove('show');
   document.getElementById('stopBtn').classList.remove('visible');
   document.getElementById('iterBadge').classList.remove('visible');
@@ -943,7 +1295,7 @@ function newTask(){
   updateCostBar();
   document.getElementById('taskInput').value='';
   document.getElementById('taskInput').focus();
-  setStatus('pronto');
+  setStatus(t('statusReady'));
   document.getElementById('runBtn').disabled=false;
   document.getElementById('newBtn').style.display='none';
   window.scrollTo({top:0,behavior:'smooth'});
@@ -960,14 +1312,14 @@ async function startRun(){
   document.getElementById('runBtn').disabled=true;
   document.getElementById('newBtn').style.display='none';
   document.getElementById('stopBtn').classList.add('visible');
-  setStatus('avvio...');
+  setStatus(t('statusRunning'));
   var res=await fetch('/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({task})});
   var json=await res.json();
   sessionId=json.session_id;
   if(es)es.close();
   es=new EventSource('/stream/'+sessionId);
   es.onmessage=e=>{var ev=JSON.parse(e.data);handleEvent(ev.type,ev.data||{});};
-  es.onerror=()=>{setStatus('errore connessione');document.getElementById('stopBtn').classList.remove('visible');document.getElementById('runBtn').disabled=false;};
+  es.onerror=()=>{setStatus(t('statusError'));document.getElementById('stopBtn').classList.remove('visible');document.getElementById('runBtn').disabled=false;};
 }
 
 // ── Parallel Dashboard ────────────────────
@@ -980,7 +1332,7 @@ function showParallelDashboard(chunks){
   var dash=document.createElement('div');
   dash.className='parallel-dash';
   dash.innerHTML=
-    '<div class="pd-header"><div class="pd-spark"></div>⚡ '+chunks.length+' worker GPT in parallelo</div>'+
+    '<div class="pd-header"><div class="pd-spark"></div>⚡ '+chunks.length+' '+t('parallelHeader')+'</div>'+
     '<div class="pd-workers" id="parallelWorkers"></div>';
 
   var workersEl=dash.querySelector('#parallelWorkers');
@@ -993,7 +1345,8 @@ function showParallelDashboard(chunks){
       '<div class="worker-status"><div class="worker-dot waiting" id="wdot-'+ch.id+'"></div>'+
       '<span id="wstat-'+ch.id+'" style="color:#bbb">in attesa...</span></div>'+
       '<div class="worker-bar-wrap"><div class="worker-bar waiting" id="wbar-'+ch.id+'"></div></div>'+
-      '<div class="worker-lines" id="wlines-'+ch.id+'"></div>';
+      '<div class="worker-stream-bar-wrap"><div class="worker-stream-bar" id="wsbar-'+ch.id+'"></div></div>'+
+      '<div class="worker-tok"><span id="wtok-'+ch.id+'"></span><span id="wlines-'+ch.id+'"></span></div>';
     workersEl.appendChild(card);
   });
 
@@ -1043,7 +1396,7 @@ function openCodeModal(filename,code){
   var lines=code.split('\n');
   var html=lines.map(function(l,i){return '<span class="ln">'+(i+1)+'</span>'+escHtml(l);}).join('\n');
   document.getElementById('modalCode').innerHTML=html;
-  document.getElementById('modalCopyBtn').textContent='Copia';
+  document.getElementById('modalCopyBtn').textContent=t('btnCopy');
   document.getElementById('modalCopyBtn').className='cm-copy';
   document.getElementById('codeModal').classList.add('open');
   document.body.style.overflow='hidden';
@@ -1054,8 +1407,8 @@ function copyModalCode(){
   var code=document.getElementById('modalCode').innerText;
   navigator.clipboard.writeText(code).then(function(){
     var btn=document.getElementById('modalCopyBtn');
-    btn.textContent='✓ Copiato!'; btn.className='cm-copy copied';
-    setTimeout(function(){btn.textContent='Copia';btn.className='cm-copy';},2000);
+    btn.textContent=t('btnCopied'); btn.className='cm-copy copied';
+    setTimeout(function(){btn.textContent=t('btnCopy');btn.className='cm-copy';},2000);
   });
 }
 document.addEventListener('keydown',function(e){if(e.key==='Escape')closeCodeModalDirect();});
@@ -1092,7 +1445,7 @@ function buildFileChips(container,files,projPath){
     dl.className='file-chip file-chip-dl';
     dl.href='/download?path='+encodeURIComponent(projPath);
     dl.target='_blank';
-    dl.innerHTML='⬇ <span>Scarica ZIP</span>';
+    dl.innerHTML='⬇ <span>'+t('downloadZip').replace('⬇ ','')+'</span>';
     container.appendChild(dl);
   }
 }
@@ -1101,18 +1454,21 @@ function buildFileChips(container,files,projPath){
 function handleEvent(type,d){
   switch(type){
     case 'loop_start':
-      setStatus('classifico...');
+      setStatus(t('statusClassifying'));
       startTimer();
       addSimpleMsg('system','Task avviato: <em>'+d.task+'</em>');
       break;
     case 'agent_start':
-      if(d.agent==='router') setStatus('router analizza...');
-      else setStatus((d.label||'')+(d.model?' · '+d.model:'')+' sta lavorando...');
+      if(d.agent==='router') setStatus(t('statusClassifying'));
+      else setStatus((d.label||'')+(d.model?' · '+d.model:'')+' '+t('statusRunning'));
+      if(isParallel && d.agent==='gpt') break;  // workers use parallel dashboard
       startStreamBubble(d.agent, d.model||null);
       break;
     case 'agent_chunk':
+      if(isParallel && d.agent==='gpt') break;
       appendStream(d.text); break;
     case 'agent_end':
+      if(isParallel && d.agent==='gpt') break;
       endStream(); break;
     case 'cost_update':{
       var p=d.provider;
@@ -1121,39 +1477,60 @@ function handleEvent(type,d){
       costs.total=d.total_cost||costs.anthropic.cost+costs.openai.cost;
       updateCostBar(); break;}
     case 'confirm_models':
-      setStatus('in attesa conferma modelli...');
+      setStatus(t('statusWaiting'));
       showConfirmCard(d); break;
     case 'models_updated':
-      addSimpleMsg('system','Modelli confermati → <strong>'+d.reasoner_label+'</strong> + <strong>'+d.implementer_label+'</strong>');
-      setStatus('avvio loop...'); break;
+      addSimpleMsg('system',t('modelsUpdated')+' <strong>'+d.reasoner_label+'</strong> + <strong>'+d.implementer_label+'</strong>');
+      setStatus(t('statusRunning')); break;
     case 'iteration_start':
       document.getElementById('iterBadge').classList.add('visible');
-      document.getElementById('iterLabel').textContent='iter '+d.n+' / '+d.max;
+      document.getElementById('iterLabel').textContent=t('iterLabel')+' '+d.n+t('of')+d.max;
       document.getElementById('iterFill').style.width=Math.round((d.n/d.max)*100)+'%'; break;
     case 'claude_result':
-      if(d.alignment==='deviated') addSimpleMsg('system','<span class="align-warn">GPT fuori binari — Claude corregge</span>');
+      if(d.alignment==='deviated') addSimpleMsg('system','<span class="align-warn">'+t('gptOffTrack')+'</span>');
       break;
     case 'gpt_realignment':
-      addSimpleMsg('claude','🎯 <strong>Riallineamento GPT:</strong> '+d.feedback); break;
+      addSimpleMsg('claude',t('realign')+' '+d.feedback); break;
     case 'fix_needed':
-      addSimpleMsg('claude','🔧 <strong>Feedback correttivo:</strong> '+d.feedback); break;
+      addSimpleMsg('claude',t('corrFeedback')+' '+d.feedback); break;
     case 'spec_ready': break;
     case 'parallel_start':
+      isParallel=true;
       showParallelDashboard(d.chunks); break;
     case 'parallel_chunk_start':
-      updateWorker(d.chunk_id,'waiting','in coda...',0); break;
+      updateWorker(d.chunk_id,'waiting',t('parallelWaiting'),0); break;
+
+    case 'parallel_chunk_stream':{
+      var sbar=document.getElementById('wsbar-'+d.chunk_id);
+      var stok=document.getElementById('wtok-'+d.chunk_id);
+      var slines=document.getElementById('wlines-'+d.chunk_id);
+      if(sbar){
+        sbar.className='worker-stream-bar running';
+        // stima larghezza: 1 tok ~ 4 chars, target ~2000 tok = 100%
+        var pct=Math.min(95,Math.round((d.tok/2000)*100));
+        sbar.style.width=pct+'%';
+        sbar.style.animation='none'; // stop indeterminate, usa width reale
+      }
+      if(stok) stok.textContent=d.tok+' tok';
+      if(slines) slines.textContent=d.lines+' righe';
+      break;}
     case 'parallel_chunk_running':
-      updateWorker(d.chunk_id,'running','elaborando...',0); break;
+      updateWorker(d.chunk_id,'running',t('parallelWorking'),0); break;
     case 'parallel_chunk_continuation':
       updateWorker(d.chunk_id,'running','continuo (tent. '+d.attempt+')...',0); break;
-    case 'parallel_chunk_done':
-      updateWorker(d.chunk_id,'done','✓ '+d.lines+' righe',d.lines); break;
+    case 'parallel_chunk_done':{
+      updateWorker(d.chunk_id,'done','✓ '+d.lines+' righe',d.lines);
+      var sbar2=document.getElementById('wsbar-'+d.chunk_id);
+      var slines2=document.getElementById('wlines-'+d.chunk_id);
+      if(sbar2){sbar2.className='worker-stream-bar done';sbar2.style.animation='none';}
+      if(slines2) slines2.textContent=d.lines+' righe';
+      break;}
     case 'parallel_chunk_error':
       updateWorker(d.chunk_id,'error','✗ '+d.error,0); break;
     case 'parallel_end':{
       finalizeParallelDashboard(d.completed,d.failed);
       var failNote=d.failed.length?' · '+d.failed.length+' falliti':'';
-      addSimpleMsg('system','🏁 '+d.completed.length+' worker completati'+failNote+' — Claude ora integra...');
+      addSimpleMsg('system','🏁 '+d.completed.length+' '+t('workers')+failNote+' '+t('parallelIntegrating'));
       break;}
     case 'file_saved':
       lastSavedPath=d.path; lastSavedFiles=d.files||[];
@@ -1164,11 +1541,11 @@ function handleEvent(type,d){
       else{var fn2=(d.files&&d.files[0])?d.files[0].replace(/\\/g,'/').split('/').pop():d.path;addSimpleMsg('system','💾 Salvato: <code>'+fn2+'</code>');}
       break;
     case 'waiting_human':
-      setStatus('in attesa risposta...');
+      setStatus(t('statusWaiting'));
       showAnswerBox(d.question); break;
     case 'human_response': break;
     case 'loop_end':
-      setStatus('completato');
+      setStatus(t('statusDone'));
       stopTimer(d.success);
       document.getElementById('stopBtn').classList.remove('visible');
       document.getElementById('iterBadge').classList.remove('visible');
@@ -1181,17 +1558,17 @@ function handleEvent(type,d){
       document.getElementById('doneBanner').classList.add('show');
       scrollFeed(); if(es)es.close(); break;
     case 'error':
-      setStatus('errore'); stopTimer(false);
+      setStatus(t('statusError')); stopTimer(false);
       document.getElementById('stopBtn').classList.remove('visible');
       document.getElementById('iterBadge').classList.remove('visible');
       document.getElementById('runBtn').disabled=false;
       addSimpleMsg('system','❌ '+d.message); break;
     case 'timeout':
-      setStatus('timeout'); stopTimer(false);
+      setStatus(t('statusTimeout')); stopTimer(false);
       document.getElementById('stopBtn').classList.remove('visible');
       document.getElementById('iterBadge').classList.remove('visible');
       document.getElementById('runBtn').disabled=false;
-      addSimpleMsg('system','⏱ Timeout — nessuna risposta ricevuta.'); break;
+      addSimpleMsg('system',t('timeoutMsg')); break;
     case 'ping': break;
   }
 }
@@ -1216,7 +1593,7 @@ async function sendContinue(){
   es.onmessage=e=>{var ev=JSON.parse(e.data);handleEvent(ev.type,ev.data||{});};
   es.onerror=()=>{setStatus('errore connessione');document.getElementById('stopBtn').classList.remove('visible');document.getElementById('runBtn').disabled=false;};
   document.getElementById('continueInput').value='';
-  setStatus('riprendendo...');
+  setStatus(t('statusRunning'));
 }
 </script>
 </body>

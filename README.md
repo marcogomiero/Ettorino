@@ -50,13 +50,18 @@ You →  "Build a web application monitoring system with daemon process,
 
 ## Screenshots
 
+### Clean interface
+Minimal terminal-style UI — JetBrains Mono throughout, log rows with left-border accents per agent, timestamps on every line.
+
+![Ettorino UI](docs/screen_ui.png)
+
 ### Routing & model selection
-The router classifies the task difficulty and proposes the optimal model pair. You can swap either model before the loop starts.
+The router classifies the task difficulty and proposes the optimal model pair. You can swap either model before the loop starts. Includes cost estimate and reasoning.
 
 ![Confirm card — difficulty MEDIUM, model selection](docs/screen_confirm.png)
 
 ### Parallel execution
-On hard tasks, 3 implementer workers run simultaneously. Each worker gets its own chunk spec, streams its output, and saves files directly to the workspace.
+On hard tasks, up to 6 implementer workers run simultaneously. Each worker card shows its own live progress bar with token and line counters streaming in real time.
 
 ![Parallel dashboard — 3 workers completed, file chips](docs/screen_parallel.png)
 
@@ -67,14 +72,18 @@ On hard tasks, 3 implementer workers run simultaneously. Each worker gets its ow
 | | |
 |---|---|
 | 🧠 **Smart router** | Classifies every task (easy/medium/hard) and selects optimal models for quality/cost |
-| ⚡ **Parallel implementation** | On hard tasks, 3 GPT workers run simultaneously on independent chunks |
+| ⚡ **Parallel implementation** | Up to 6 GPT workers run simultaneously, wave-scheduled via dependency graph |
+| 📊 **Per-worker live bars** | Each parallel worker streams its own token/line counter in real time |
 | 💬 **Conversational loop** | Claude asks for clarification when needed, without blocking |
 | 🔄 **Continue the conversation** | After completion, request changes — restarts with fresh classification |
-| 🛑 **Stop anytime** | Fixed floating button, interrupts the loop without losing context |
+| 🛑 **Stop anytime** | Floating button, interrupts the loop without losing context |
 | 💰 **Real-time cost tracking** | Tokens and dollars per model, updated live during execution |
 | 📁 **Multi-file structure** | Code saved in the exact folder structure planned by Claude |
 | ⬇️ **Direct download** | Download the project as a `.zip` at the end of each run |
-| 🔁 **Auto-continuation** | If GPT output is truncated, it resumes automatically from where it left off |
+| 🔁 **Auto-continuation** | If output is truncated, resumes automatically (up to 3 attempts) |
+| 🌍 **EN / IT localization** | Full interface translation, language preference persisted in localStorage |
+| 🌙 **Dark mode** | One click, persisted in localStorage |
+| 💡 **Task examples** | Built-in easy/medium/hard examples to get started quickly |
 | 🐳 **Container-ready** | Multi-stage Chainguard image, runs anywhere with Docker |
 
 ---
@@ -85,10 +94,29 @@ On hard tasks, 3 implementer workers run simultaneously. Each worker gets its ow
 |------|----------|-------------|------|
 | 🟢 **Easy** | Claude Haiku 4.5 | GPT-4.1 mini | Scripts, utilities, single functions |
 | 🟡 **Medium** | Claude Sonnet 4.6 | GPT-4.1 | Multi-component apps, APIs, 100–500 lines |
-| 🟠 **Hard-mid** | Claude Opus 4.6 | o3 | Complex systems, multi-file architectures |
+| 🟠 **Hard-mid** | Claude Opus 4.6 | GPT-4.1 | Complex systems, multi-file architectures |
 | 🔴 **Hard** | Claude Opus 4.7 | o3 | Very complex systems, ML/AI, 600+ lines |
 
 The classifier always uses **Claude Sonnet 4.6** regardless of tier (cost < $0.01).
+
+---
+
+## Parallel execution — how it works
+
+On hard/hard-mid tasks Claude decides how many chunks to produce (2–6) and whether they have dependencies. The executor runs them in **topological waves**: independent chunks run in parallel, dependent chunks wait for their prerequisites.
+
+```
+Claude decides:
+  Chunk A — foundations (config, db, models)      → no deps
+  Chunk B — core logic (monitor, scheduler)        → depends on A
+  Chunk C — external interfaces (API, alerter)     → depends on A
+
+Execution:
+  Wave 1: [A]           ← runs alone (is a prerequisite)
+  Wave 2: [B, C]        ← run in parallel once A is done
+```
+
+Each worker streams its progress live. If a chunk marked `is_critical` fails, the wave is cancelled immediately.
 
 ---
 
@@ -99,7 +127,7 @@ The classifier always uses **Claude Sonnet 4.6** regardless of tier (cost < $0.0
 | "Write a Python function that..." | ~$0.002 |
 | "Build a CLI with 4 commands..." | ~$0.05–0.15 |
 | "Multi-component monitoring system..." | ~$0.50–2.00 |
-| "3-worker parallel system, hard task" | ~$1.50–4.00 |
+| "6-worker parallel system, hard task" | ~$1.50–5.00 |
 
 ---
 
@@ -172,8 +200,8 @@ docker run -p 8080:5000 \
 ettorino/
 ├── ettorino_assistant.py   ← Flask backend + agent engine + parallel loop
 ├── templates/
-│   └── index.html          ← UI with live streaming, progress bars, parallel dashboard
-├── workspace/              ← generated projects, organized by task
+│   └── index.html          ← UI: terminal aesthetic, i18n, dark mode, parallel dashboard
+├── workspace/              ← generated projects, organized by task slug
 │   └── build_a_web_/
 │       ├── webmon/
 │       └── config.yaml
@@ -222,8 +250,9 @@ POST /run
         ├── claude_reason()     Claude streams reasoning (only "thoughts" shown in UI)
         │     │
         │     ├── implement          → run_implementer() sequential
-        │     ├── implement_parallel → run_implementer_parallel() × 3 workers
-        │     │                        wave-scheduled via ChunkManager.execution_waves()
+        │     ├── implement_parallel → run_implementer_parallel() × 2–6 workers
+        │     │                        ChunkManager.execution_waves() → topological sort
+        │     │                        each worker streams parallel_chunk_stream events
         │     ├── fix               → run_implementer() with corrective feedback
         │     ├── ask               → waits for user input via SSE
         │     └── done              → saves state, emits loop_end
