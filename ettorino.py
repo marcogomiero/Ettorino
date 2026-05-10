@@ -14,6 +14,14 @@ import ssl
 import httpx
 import urllib3
 
+# ── Google Gemini SDK ───────────────────────
+try:
+    from google import genai as google_genai
+    from google.genai import types as genai_types
+    GOOGLE_AVAILABLE = True
+except ImportError:
+    GOOGLE_AVAILABLE = False
+
 # Silenzia i warning SSL (proxy aziendali con self-signed cert)
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -21,15 +29,50 @@ load_dotenv()
 
 app = Flask(__name__)
 
-WORKSPACE = Path("workspace")
+WORKSPACE   = Path("workspace")
+MEMORY_PATH = Path("MEMORY.md")
 WORKSPACE.mkdir(exist_ok=True)
+
+# ─────────────────────────────────────────────
+# MEMORY — legge MEMORY.md e inietta in Claude
+# ─────────────────────────────────────────────
+def load_memory() -> str:
+    """Legge MEMORY.md e restituisce il contenuto rilevante per Claude.
+    Ritorna stringa vuota se il file non esiste o è vuoto."""
+    if not MEMORY_PATH.exists():
+        return ""
+    raw = MEMORY_PATH.read_text(encoding="utf-8").strip()
+    if not raw:
+        return ""
+    return f"\n\n─── MEMORY (istruzioni persistenti) ───\n{raw}\n───────────────────────────────────────"
+
+def append_to_memory(section: str, item: str) -> bool:
+    """Aggiunge un item bullet a una sezione di MEMORY.md.
+    Crea il file se non esiste. Ritorna True se ok."""
+    try:
+        text = MEMORY_PATH.read_text(encoding="utf-8") if MEMORY_PATH.exists() else ""
+        header = f"## {section}"
+        if header in text:
+            # Inserisce dopo l'header della sezione
+            idx = text.index(header) + len(header)
+            # Salta eventuali righe vuote dopo l'header
+            while idx < len(text) and text[idx] in ("\n", " "):
+                idx += 1
+            text = text[:idx] + f"\n- {item}\n" + text[idx:]
+        else:
+            # Aggiunge la sezione in fondo
+            text = text.rstrip() + f"\n\n{header}\n\n- {item}\n"
+        MEMORY_PATH.write_text(text, encoding="utf-8")
+        return True
+    except Exception:
+        return False
 
 # ─────────────────────────────────────────────
 # MODEL REGISTRY
 # prezzi in $ per milione di token
 # ─────────────────────────────────────────────
 MODELS = {
-    # Anthropic — dual role (reasoner OR implementer)
+    # ── Anthropic — dual role (reasoner OR implementer) ──────────────────
     "claude-haiku-4-5": {
         "provider": "anthropic",
         "label": "Claude Haiku 4.5",
@@ -46,14 +89,6 @@ MODELS = {
         "input_cost": 3.00,
         "output_cost": 15.00,
     },
-    "claude-opus-4-7": {
-        "provider": "anthropic",
-        "label": "Claude Opus 4.7",
-        "role": ["reasoner", "implementer"],
-        "tier": "hard",
-        "input_cost": 5.00,
-        "output_cost": 25.00,
-    },
     "claude-opus-4-6": {
         "provider": "anthropic",
         "label": "Claude Opus 4.6",
@@ -62,7 +97,15 @@ MODELS = {
         "input_cost": 5.00,
         "output_cost": 25.00,
     },
-    # OpenAI — implementer only
+    "claude-opus-4-7": {
+        "provider": "anthropic",
+        "label": "Claude Opus 4.7",
+        "role": ["reasoner", "implementer"],
+        "tier": "hard",
+        "input_cost": 5.00,
+        "output_cost": 25.00,
+    },
+    # ── OpenAI — implementer only ─────────────────────────────────────────
     "gpt-4.1-mini": {
         "provider": "openai",
         "label": "GPT-4.1 mini",
@@ -87,28 +130,85 @@ MODELS = {
         "input_cost": 15.00,
         "output_cost": 60.00,
     },
+    # ── Google Gemini — implementer only ─────────────────────────────────
+    # Gemini 2.5 (stable, produzione) — free tier disponibile su flash/flash-lite
+    "gemini-2.5-flash-lite": {
+        "provider": "google",
+        "label": "Gemini 2.5 Flash-Lite",
+        "role": ["implementer"],
+        "tier": "easy",
+        "input_cost": 0.10,
+        "output_cost": 0.40,
+        "free_tier": True,
+    },
+    "gemini-2.5-flash": {
+        "provider": "google",
+        "label": "Gemini 2.5 Flash",
+        "role": ["implementer"],
+        "tier": "medium",
+        "input_cost": 0.30,
+        "output_cost": 2.50,
+        "free_tier": True,
+    },
+    "gemini-2.5-pro": {
+        "provider": "google",
+        "label": "Gemini 2.5 Pro",
+        "role": ["implementer"],
+        "tier": "hard-mid",
+        "input_cost": 1.25,
+        "output_cost": 10.00,
+        "free_tier": False,
+    },
+    # Gemini 3 / 3.1 (generazione più recente) — solo paid
+    "gemini-3-flash-preview": {
+        "provider": "google",
+        "label": "Gemini 3 Flash",
+        "role": ["implementer"],
+        "tier": "medium",
+        "input_cost": 0.50,
+        "output_cost": 3.00,
+        "free_tier": False,
+    },
+    "gemini-3.1-flash-lite-preview": {
+        "provider": "google",
+        "label": "Gemini 3.1 Flash-Lite",
+        "role": ["implementer"],
+        "tier": "easy",
+        "input_cost": 0.25,
+        "output_cost": 1.50,
+        "free_tier": False,
+    },
+    "gemini-3.1-pro-preview": {
+        "provider": "google",
+        "label": "Gemini 3.1 Pro",
+        "role": ["implementer"],
+        "tier": "hard",
+        "input_cost": 2.00,
+        "output_cost": 12.00,
+        "free_tier": False,
+    },
 }
 
 # Tier → modelli di default
 TIER_MODELS = {
-    "easy":   {"reasoner": "claude-haiku-4-5",   "implementer": "gpt-4.1-mini"},
-    "medium": {"reasoner": "claude-sonnet-4-6",  "implementer": "gpt-4.1"},
-    "hard":   {"reasoner": "claude-opus-4-7",    "implementer": "o3"},
+    "easy":     {"reasoner": "claude-haiku-4-5",   "implementer": "gemini-2.5-flash-lite"},
+    "medium":   {"reasoner": "claude-sonnet-4-6",  "implementer": "gemini-2.5-flash"},
+    "hard-mid": {"reasoner": "claude-opus-4-6",    "implementer": "gemini-2.5-pro"},
+    "hard":     {"reasoner": "claude-opus-4-7",    "implementer": "o3"},
 }
 
 # State globale sessioni
-event_queues   = {}
-session_costs  = {}
+event_queues    = {}
+session_costs   = {}
 human_responses = {}
 model_overrides = {}  # session_id → {"reasoner": ..., "implementer": ...}
-session_state  = {}  # session_id → {"code": str, "task": str, "reasoner": str, "implementer": str, "iteration": int}
-stop_flags     = {}  # session_id → bool — set True to abort loop
+session_state   = {}  # session_id → {"code": str, "task": str, ...}
+stop_flags      = {}  # session_id → bool
 
 # ─────────────────────────────────────────────
 # HELPERS
 # ─────────────────────────────────────────────
 def _make_http_client() -> httpx.Client:
-    """Client httpx senza verifica SSL — necessario per proxy aziendali con certificati self-signed."""
     return httpx.Client(
         transport=httpx.HTTPTransport(verify=False),
         verify=False,
@@ -126,6 +226,15 @@ def get_openai_client():
     if not key:
         raise ValueError("OPENAI_API_KEY mancante nel .env")
     return openai.OpenAI(api_key=key, http_client=_make_http_client())
+
+def get_google_client():
+    """Restituisce un client Google Gemini configurato."""
+    if not GOOGLE_AVAILABLE:
+        raise ValueError("Libreria google-genai non installata. Esegui: pip install google-genai")
+    key = os.environ.get("GOOGLE_API_KEY")
+    if not key:
+        raise ValueError("GOOGLE_API_KEY mancante nel .env")
+    return google_genai.Client(api_key=key)
 
 def estimate_tokens(text: str) -> int:
     return max(1, len(text) // 4)
@@ -156,25 +265,69 @@ def wait_for_human(session_id: str, timeout: int = 300) -> str | None:
         if session_id in human_responses:
             val = human_responses.pop(session_id)
             if val == "__stop__":
-                return None  # treat as timeout/abort
+                return None
             return val
         time.sleep(0.3)
     return None
 
 # ─────────────────────────────────────────────
+# GOOGLE GEMINI — helper implementer
+# ─────────────────────────────────────────────
+def _gemini_generate(google_client, model_id: str, system: str, prompt: str,
+                     max_tok: int, agent_key: str, q: queue.Queue) -> tuple[str, int, int, bool]:
+    """
+    Chiama Gemini con streaming e restituisce (full_code, input_tok, output_tok, truncated).
+    Claude resta orchestratore — Gemini è solo implementer.
+    """
+    full_code = ""
+    truncated = False
+
+    config = genai_types.GenerateContentConfig(
+        system_instruction=system,
+        max_output_tokens=max_tok,
+        temperature=0.2,
+    )
+
+    response = google_client.models.generate_content_stream(
+        model=model_id,
+        contents=prompt,
+        config=config,
+    )
+
+    for chunk in response:
+        if chunk.text:
+            full_code += chunk.text
+            emit(q, "agent_chunk", {"agent": agent_key, "text": chunk.text})
+
+    # usage metadata (disponibile sull'ultimo chunk via response.usage_metadata)
+    try:
+        usage = response.usage_metadata if hasattr(response, 'usage_metadata') else None
+        input_tok = usage.prompt_token_count if usage else estimate_tokens(system + prompt)
+        output_tok = usage.candidates_token_count if usage else estimate_tokens(full_code)
+    except Exception:
+        input_tok = estimate_tokens(system + prompt)
+        output_tok = estimate_tokens(full_code)
+
+    # Gemini non ha un flag "length" esplicito nello streaming; stima troncamento
+    # se l'output è vicino al limite (>95% dei max_tok stimati)
+    truncated = output_tok >= int(max_tok * 0.95)
+
+    return full_code, input_tok, output_tok, truncated
+
+# ─────────────────────────────────────────────
 # FASE 0 — CLASSIFIER
-# Usa sempre Sonnet per la classificazione: abbastanza smart, non troppo caro
 # ─────────────────────────────────────────────
 CLASSIFIER_MODEL = "claude-haiku-4-5"
 
-def classify_task(client: anthropic.Anthropic, session_id: str, task: str, q: queue.Queue, silent: bool = False) -> dict:
+def classify_task(client: anthropic.Anthropic, session_id: str, task: str,
+                  q: queue.Queue, silent: bool = False) -> dict:
     if not silent:
         emit(q, "agent_start", {"agent": "router", "label": "Router"})
         emit(q, "agent_chunk", {"agent": "router", "text": "Analizzo il task..."})
 
-    system = """Sei il router intelligente di Ettorino, un assistente agente Claude×GPT.
+    system = """Sei il router intelligente di Ettorino, un assistente agente Claude×GPT×Gemini.
 Il tuo compito è analizzare il task dell'utente e decidere:
-1. La difficoltà: easy / medium / hard
+1. La difficoltà: easy / medium / hard-mid / hard
 2. I modelli migliori per massimizzare qualità e minimizzare costi
 3. Se hai dubbi sul task, formula una domanda di chiarimento
 4. Una stima realistica di token e costo
@@ -182,10 +335,24 @@ Il tuo compito è analizzare il task dell'utente e decidere:
 Criteri difficoltà:
 - easy: script semplice, funzione singola, utility < 100 righe, nessuna dipendenza esterna complessa
 - medium: app multi-componente, API integration, logica non banale, 100-500 righe
-- hard-mid: sistemi complessi ma circoscritti, architetture multi-componente, 300-600 righe — usa Opus 4.6
-- hard: sistemi molto complessi, ML/AI, architetture multi-file, algoritmi avanzati, > 600 righe — usa Opus 4.7
+- hard-mid: sistemi complessi ma circoscritti, architetture multi-componente, 300-600 righe
+- hard: sistemi molto complessi, ML/AI, architetture multi-file, algoritmi avanzati, > 600 righe
 
-Suggerisci sempre il modello più adatto al task specifico, non il più economico di default.
+Modelli implementer disponibili:
+OpenAI:
+- gpt-4.1-mini (easy, economico)
+- gpt-4.1 (medium, qualità/prezzo ottimale)
+- o3 (hard, ragionamento avanzato)
+Google Gemini (contesto 1M token su tutti):
+- gemini-2.5-flash-lite (easy, FREE tier, $0.10/1M input — il più economico)
+- gemini-2.5-flash (medium, FREE tier, $0.30/1M input — ottimo per codice)
+- gemini-2.5-pro (hard-mid, PAID only, $1.25/1M — codebase grandi)
+- gemini-3-flash-preview (medium, PAID, $0.50/1M — generazione nuova)
+- gemini-3.1-flash-lite-preview (easy, PAID, $0.25/1M — gen 3 economico)
+- gemini-3.1-pro-preview (hard, PAID, $2.00/1M — flagship Google)
+Preferisci Gemini per task con contesto elevato o quando il costo è prioritario.
+
+Suggerisci sempre il modello più adatto al task specifico.
 Se il task è ambiguo, formulare UNA domanda precisa è più utile che procedere a caso.
 
 Rispondi SOLO con JSON valido, nessun testo fuori:
@@ -194,12 +361,12 @@ Rispondi SOLO con JSON valido, nessun testo fuori:
   "confidence": 0.0-1.0,
   "reasoning": "spiegazione breve",
   "suggested_reasoner": "claude-haiku-4-5|claude-sonnet-4-6|claude-opus-4-6|claude-opus-4-7",
-  "suggested_implementer": "gpt-4.1-mini|gpt-4.1|o3",
+  "suggested_implementer": "gpt-4.1-mini|gpt-4.1|o3|gemini-2.5-flash|gemini-2.5-pro",
   "model_rationale": "perché questi modelli per questo task",
   "estimated_input_tokens": 1000,
   "estimated_output_tokens": 2000,
   "estimated_cost_usd": 0.05,
-  "needs_clarification": true|false,
+  "needs_clarification": true,
   "clarification_question": "domanda se needs_clarification è true, altrimenti null",
   "complexity_factors": ["fattore1", "fattore2"]
 }"""
@@ -230,10 +397,12 @@ Rispondi SOLO con JSON valido, nessun testo fuori:
         clean = raw.replace("```json", "").replace("```", "").strip()
         result = json.loads(clean)
     except Exception:
-        result = {"difficulty": "medium", "confidence": 0.5, "reasoning": raw,
-                  "suggested_reasoner": "claude-sonnet-4-6",
-                  "suggested_implementer": "gpt-4.1",
-                  "needs_clarification": False}
+        result = {
+            "difficulty": "medium", "confidence": 0.5, "reasoning": raw,
+            "suggested_reasoner": "claude-sonnet-4-6",
+            "suggested_implementer": "gpt-4.1",
+            "needs_clarification": False,
+        }
 
     if not silent:
         emit(q, "agent_end", {"agent": "router"})
@@ -241,73 +410,59 @@ Rispondi SOLO con JSON valido, nessun testo fuori:
 
 # ─────────────────────────────────────────────
 # FASE 1 — CLAUDE REASONER
-# Ragiona, specifica, verifica, tiene GPT sui binari
 # ─────────────────────────────────────────────
 def claude_reason(client: anthropic.Anthropic, session_id: str, task: str,
                   context: str, model_id: str, iteration: int, q: queue.Queue) -> dict:
 
     emit(q, "agent_start", {"agent": "claude", "label": "Claude", "model": MODELS[model_id]["label"]})
 
-    system = """Sei Claude, il Reasoner di Ettorino. Il tuo ruolo è:
-1. RAGIONARE sul task e produrre specifiche tecniche precise per GPT
-2. VERIFICARE il codice prodotto da GPT ad ogni iterazione
-3. TENERE GPT SUI BINARI: se GPT ha deviato dal task, correggi esplicitamente
+    memory = load_memory()
+    system = f"""Sei Claude, il Reasoner di Ettorino. Il tuo ruolo è:{memory}
+
+1. RAGIONARE sul task e produrre specifiche tecniche precise per l'Implementer
+2. VERIFICARE il codice prodotto ad ogni iterazione
+3. TENERE L'IMPLEMENTER SUI BINARI: se ha deviato dal task, correggi esplicitamente
 4. CHIEDERE all'utente se hai dubbi genuini prima di procedere
 5. DICHIARARE DONE solo quando il codice è completo, corretto e testabile
 
-Quando scrivi le spec per GPT sii MOLTO specifico:
+Quando scrivi le spec per l'Implementer sii MOLTO specifico:
 - Struttura esatta dei file
 - Firme delle funzioni
 - Casi edge da gestire
 - Formato dell'output atteso
 
-Se GPT ha prodotto codice che non soddisfa le spec, indica ESATTAMENTE cosa correggere.
-IMPORTANTE — output troncato: Se un file termina bruscamente, NON mandare status "fix" per troncamento.
-Valuta il codice parziale: se il chunk è abbastanza completo da funzionare, dichiaralo OK.
-
-REVIEW PARALLELA: Quando ricevi codice da chunk multipli (=== CHUNK A ===, === CHUNK B ===, ecc.):
+REVIEW PARALLELA: Quando ricevi codice da chunk multipli (=== CHUNK A ===, ecc.):
 1. Leggi TUTTI i chunk prima di decidere
-2. Verifica import incrociati: se chunk A importa da chunk B, controlla che B esporti quella cosa
-3. Verifica naming: stesse variabili/classi chiamate uguale in tutti i chunk
+2. Verifica import incrociati
+3. Verifica naming consistency
 4. Se tutto coerente → status "done"
-5. Se ci sono problemi specifici → status "fix" con feedback che indica QUALE chunk correggere e COSA
+5. Se ci sono problemi → status "fix" con feedback specifico per chunk
 
-FILE NEL WORKSPACE: Se nel contesto vedi "FILE GIÀ PRESENTI NEL WORKSPACE", quei file esistono
-già su disco con il loro contenuto completo. NON chiedere all'utente di fornirli, NON usare
-status "ask" per ottenerli — sono già disponibili. Valuta il codice che hai nel contesto.
+FILE NEL WORKSPACE: Se vedi "FILE GIÀ PRESENTI NEL WORKSPACE", quei file esistono su disco.
+NON chiedere all'utente di fornirli, NON usare status "ask" per ottenerli.
 
 Rispondi SOLO con JSON valido:
-{
+{{
   "status": "implement|implement_parallel|fix|ask|done",
   "thoughts": "il tuo ragionamento interno (visibile all'utente)",
-  "spec": "specifiche dettagliate per GPT (solo se status=implement, singolo chunk)",
+  "spec": "specifiche dettagliate per l'Implementer (solo se status=implement)",
   "parallel_chunks": [
-    {"id": "A", "title": "titolo feature A", "spec": "spec dettagliata per GPT worker 1"},
-    {"id": "B", "title": "titolo feature B", "spec": "spec dettagliata per GPT worker 2"},
-    {"id": "C", "title": "titolo feature C", "spec": "spec dettagliata per GPT worker 3"}
+    {{"id": "A", "title": "titolo feature A", "spec": "spec dettagliata per worker 1"}},
+    {{"id": "B", "title": "titolo feature B", "spec": "spec dettagliata per worker 2"}},
+    {{"id": "C", "title": "titolo feature C", "spec": "spec dettagliata per worker 3"}}
   ],
-  "feedback": "feedback correttivo preciso per GPT (solo se status=fix)",
+  "feedback": "feedback correttivo preciso (solo se status=fix)",
   "question": "domanda per l'utente (solo se status=ask)",
   "summary": "riepilogo finale (solo se status=done)",
-  "gpt_alignment": "valutazione se GPT ha seguito le spec: ok|deviated|partial"
-}
+  "gpt_alignment": "ok|deviated|partial"
+}}
 
-REGOLA OBBLIGATORIA — implement_parallel:
-Su task hard/hard-mid con 4+ file DEVI usare implement_parallel. MAI implement singolo.
-Le dipendenze unidirezionali NON impediscono la parallelizzazione: specifica le interfacce
-attese nel chunk dipendente e GPT le implementerà coerentemente.
-
-Usa ESATTAMENTE 3 chunk, sempre:
+REGOLA — implement_parallel:
+Su task hard/hard-mid con 4+ file DEVI usare implement_parallel.
+Usa ESATTAMENTE 3 chunk:
 - Chunk A: fondamenta (config, db, modelli dati, utils condivise)
-- Chunk B: logica core (monitor, checker, business logic principale)
-- Chunk C: interfacce esterne (API REST, alerter, daemon entry point)
-
-Puoi usare implement_parallel più volte nello stesso task (multi-round):
-- Round 1: fondamenta con implement normale se A è prerequisito
-- Round 2: 3 chunk paralleli per il resto
-- Round 3 se necessario: fix o integrazione
-
-Specifica in ogni chunk quali interfacce/funzioni gli altri chunk devono aspettarsi."""
+- Chunk B: logica core (business logic principale)
+- Chunk C: interfacce esterne (API REST, entry point, CLI)"""
 
     user_content = f"""TASK ORIGINALE:
 {task}
@@ -335,7 +490,6 @@ Analizza, ragiona e decidi il prossimo passo."""
         output_tok = final_msg.usage.output_tokens
 
     total = add_cost(session_id, model_id, input_tok, output_tok)
-
     emit(q, "cost_update", {
         "model_id": model_id,
         "model_label": MODELS[model_id]["label"],
@@ -348,27 +502,19 @@ Analizza, ragiona e decidi il prossimo passo."""
     emit(q, "agent_end", {"agent": "claude"})
 
     def _parse_claude_json(text: str) -> dict:
-        """Estrae JSON robusto dalla risposta di Claude, gestendo markdown, testo extra e JSON parziale."""
         import re
-
-        # 1. Prova prima a estrarre da blocco ```json ... ```
         md_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', text, re.DOTALL)
         if md_match:
             try:
                 return json.loads(md_match.group(1))
             except Exception:
                 pass
-
-        # 2. Prova a trovare il JSON più lungo (primo { all'ultimo })
         try:
             start = text.index("{")
             end = text.rindex("}") + 1
-            candidate = text[start:end]
-            return json.loads(candidate)
+            return json.loads(text[start:end])
         except Exception:
             pass
-
-        # 3. Cerca tutti i blocchi {...} e prova ognuno dal più lungo al più corto
         candidates = re.findall(r"\{[^{}]*(?:\{[^{}]*\}[^{}]*)?\}", text, re.DOTALL)
         candidates.sort(key=len, reverse=True)
         for cand in candidates:
@@ -378,27 +524,23 @@ Analizza, ragiona e decidi il prossimo passo."""
                     return parsed
             except Exception:
                 continue
-
-        # 4. Fallback: inferisci lo status dal testo e costruisci JSON sintetico
         text_lower = text.lower()
-        if any(w in text_lower for w in ["implementa", "implement", "spec", "specifich"]):
+        if any(w in text_lower for w in ["implementa", "implement", "spec"]):
             return {"status": "implement", "thoughts": text, "spec": text, "gpt_alignment": "ok"}
-        elif any(w in text_lower for w in ["completato", "done", "finito", "corretto", "funziona"]):
+        elif any(w in text_lower for w in ["completato", "done", "finito"]):
             return {"status": "done", "thoughts": text, "summary": text, "gpt_alignment": "ok"}
-        elif any(w in text_lower for w in ["correggi", "fix", "errore", "problema", "manca"]):
+        elif any(w in text_lower for w in ["correggi", "fix", "errore"]):
             return {"status": "fix", "thoughts": text, "feedback": text, "gpt_alignment": "partial"}
-        else:
-            return {"status": "implement", "thoughts": text, "spec": text, "gpt_alignment": "ok"}
+        return {"status": "implement", "thoughts": text, "spec": text, "gpt_alignment": "ok"}
 
     return _parse_claude_json(full_text)
 
 # ─────────────────────────────────────────────
-# FASE 2 — GPT IMPLEMENTER
+# FASE 2 — IMPLEMENTER UNIFICATO (Claude / OpenAI / Google)
 # ─────────────────────────────────────────────
 def run_implementer(anthropic_client: anthropic.Anthropic, openai_client: openai.OpenAI,
                     session_id: str, task: str, spec: str,
                     feedback: str, iteration: int, model_id: str, q: queue.Queue) -> str:
-    """Implementer unificato: usa Claude o GPT a seconda del provider del modello scelto."""
 
     provider = MODELS.get(model_id, {}).get("provider", "openai")
 
@@ -409,18 +551,23 @@ def run_implementer(anthropic_client: anthropic.Anthropic, openai_client: openai
         model_id = fallback
         provider = MODELS[model_id]["provider"]
 
+    # Google Gemini: controlla disponibilità SDK
+    if provider == "google" and not GOOGLE_AVAILABLE:
+        emit(q, "agent_chunk", {"agent": "gpt", "text": "⚠ google-genai non installato — fallback a gpt-4.1"})
+        model_id = "gpt-4.1"
+        provider = "openai"
+
     agent_key = "claude" if provider == "anthropic" else "gpt"
     emit(q, "agent_start", {"agent": agent_key, "label": "Implementer", "model": MODELS[model_id]["label"]})
 
     system = """Sei l'Implementer di Ettorino. Il tuo ruolo è:
-1. Implementare ESATTAMENTE le specifiche che ti fornisce il Reasoner
+1. Implementare ESATTAMENTE le specifiche che ti fornisce il Reasoner Claude
 2. NON aggiungere funzionalità non richieste
 3. NON omettere nulla di ciò che è nelle spec
 4. Scrivere codice pulito, commentato, immediatamente eseguibile
-5. Se le spec sono ambigue, implementa la versione più ragionevole e documentala
 
 FORMATO OUTPUT — OBBLIGATORIO:
-Se il progetto ha più file, usa SEMPRE questo formato per separare i file:
+Se il progetto ha più file, usa SEMPRE questo formato:
 
 ### FILE: percorso/relativo/file.py
 (codice completo del file)
@@ -428,24 +575,15 @@ Se il progetto ha più file, usa SEMPRE questo formato per separare i file:
 ### FILE: altro/file.py
 (codice completo)
 
-Esempio:
-### FILE: webmon/__init__.py
-__version__ = "1.0.0"
-
-### FILE: webmon/config.py
-import yaml
-...
-
-Se il progetto è un singolo file, scrivi solo il codice Python puro senza intestazione FILE.
-Ogni file deve essere COMPLETO e funzionante. Non troncare MAI il codice — se hai bisogno di
-molto spazio, produci un file alla volta in modo completo prima di passare al successivo."""
+Se è un singolo file, scrivi solo il codice Python puro senza intestazione FILE.
+Ogni file deve essere COMPLETO. Non troncare MAI il codice."""
 
     prompt = f"SPECIFICHE DA IMPLEMENTARE:\n{spec}"
     if feedback:
         prompt += f"\n\nFEEDBACK CORRETTIVO:\n{feedback}\nCorreggi il codice rispettando questo feedback."
 
     tier = MODELS.get(model_id, {}).get("tier", "medium")
-    max_tok_map = {"easy": 4000, "medium": 8000, "hard": 16000, "hard-mid": 12000}
+    max_tok_map = {"easy": 4000, "medium": 8000, "hard-mid": 12000, "hard": 16000}
     max_tok = max_tok_map.get(tier, 8000)
 
     full_code = ""
@@ -453,8 +591,30 @@ molto spazio, produci un file alla volta in modo completo prima di passare al su
     input_tok = estimate_tokens(system + prompt)
     output_tok = 0
 
-    if provider == "anthropic":
-        # ── Claude implementer ──────────────────────────────────────────────
+    # ── GOOGLE GEMINI ──────────────────────────────────────────────────────
+    if provider == "google":
+        google_client = get_google_client()
+        full_code, input_tok, output_tok, truncated = _gemini_generate(
+            google_client, model_id, system, prompt, max_tok, agent_key, q
+        )
+
+        # Auto-continuazione Gemini
+        MAX_CONT = 3
+        cont = 0
+        while truncated and cont < MAX_CONT:
+            cont += 1
+            emit(q, "agent_chunk", {"agent": agent_key,
+                "text": f"\n\n[⚠ output troncato — continuo ({cont}/{MAX_CONT})...]\n"})
+            cont_prompt = f"{prompt}\n\n[CODICE PRODOTTO FINORA]\n{full_code}\n\nContinua esattamente da dove ti sei fermato."
+            cont_text, it, ot, truncated = _gemini_generate(
+                google_client, model_id, system, cont_prompt, max_tok, agent_key, q
+            )
+            full_code += cont_text
+            input_tok += it
+            output_tok += ot
+
+    # ── ANTHROPIC (Claude come implementer) ───────────────────────────────
+    elif provider == "anthropic":
         with anthropic_client.messages.stream(
             model=model_id,
             max_tokens=max_tok,
@@ -469,12 +629,12 @@ molto spazio, produci un file alla volta in modo completo prima di passare al su
             output_tok = final_msg.usage.output_tokens
             truncated = (final_msg.stop_reason == "max_tokens")
 
-        # Auto-continuazione se troncato
-        MAX_CONTINUATIONS = 3
+        MAX_CONT = 3
         cont = 0
-        while truncated and cont < MAX_CONTINUATIONS:
+        while truncated and cont < MAX_CONT:
             cont += 1
-            emit(q, "agent_chunk", {"agent": agent_key, "text": f"\n\n[⚠ output troncato — continuo ({cont}/{MAX_CONTINUATIONS})...]\n"})
+            emit(q, "agent_chunk", {"agent": agent_key,
+                "text": f"\n\n[⚠ output troncato — continuo ({cont}/{MAX_CONT})...]\n"})
             with anthropic_client.messages.stream(
                 model=model_id,
                 max_tokens=max_tok,
@@ -482,21 +642,21 @@ molto spazio, produci un file alla volta in modo completo prima di passare al su
                 messages=[
                     {"role": "user", "content": prompt},
                     {"role": "assistant", "content": full_code},
-                    {"role": "user", "content": "Continua esattamente da dove ti sei fermato. Non ripetere il codice già scritto."},
+                    {"role": "user", "content": "Continua esattamente da dove ti sei fermato."},
                 ]
-            ) as cont_stream:
+            ) as cs:
                 cont_text = ""
-                for text in cont_stream.text_stream:
+                for text in cs.text_stream:
                     cont_text += text
                     emit(q, "agent_chunk", {"agent": agent_key, "text": text})
-                final_cont = cont_stream.get_final_message()
+                final_cont = cs.get_final_message()
                 input_tok += final_cont.usage.input_tokens
                 output_tok += final_cont.usage.output_tokens
                 truncated = (final_cont.stop_reason == "max_tokens")
             full_code += cont_text
 
+    # ── OPENAI ────────────────────────────────────────────────────────────
     else:
-        # ── OpenAI implementer (logica originale) ───────────────────────────
         if model_id == "o3":
             response = openai_client.chat.completions.create(
                 model=model_id,
@@ -522,7 +682,7 @@ molto spazio, produci un file alla volta in modo completo prima di passare al su
                     {"role": "user", "content": prompt}
                 ]
             )
-            last_finish_reason = None
+            last_finish = None
             for chunk in stream:
                 if chunk.choices:
                     delta = chunk.choices[0].delta.content or ""
@@ -531,27 +691,27 @@ molto spazio, produci un file alla volta in modo completo prima di passare al su
                     if delta:
                         emit(q, "agent_chunk", {"agent": agent_key, "text": delta})
                     if chunk.choices[0].finish_reason:
-                        last_finish_reason = chunk.choices[0].finish_reason
+                        last_finish = chunk.choices[0].finish_reason
                 if hasattr(chunk, "usage") and chunk.usage:
                     input_tok = chunk.usage.prompt_tokens
                     output_tok = chunk.usage.completion_tokens
-            truncated = (last_finish_reason == "length")
+            truncated = (last_finish == "length")
 
-        # Auto-continuazione OpenAI
-        MAX_CONTINUATIONS = 3
+        MAX_CONT = 3
         cont = 0
-        while truncated and cont < MAX_CONTINUATIONS:
+        while truncated and cont < MAX_CONT:
             cont += 1
-            emit(q, "agent_chunk", {"agent": agent_key, "text": f"\n\n[⚠ output troncato — continuo ({cont}/{MAX_CONTINUATIONS})...]\n"})
-            cont_messages = [
+            emit(q, "agent_chunk", {"agent": agent_key,
+                "text": f"\n\n[⚠ output troncato — continuo ({cont}/{MAX_CONT})...]\n"})
+            cont_msgs = [
                 {"role": "system", "content": system},
                 {"role": "user", "content": prompt},
                 {"role": "assistant", "content": full_code},
-                {"role": "user", "content": "Continua esattamente da dove ti sei fermato. Non ripetere il codice già scritto."}
+                {"role": "user", "content": "Continua esattamente da dove ti sei fermato."},
             ]
             if model_id == "o3":
                 cr = openai_client.chat.completions.create(
-                    model=model_id, max_completion_tokens=max_tok, messages=cont_messages)
+                    model=model_id, max_completion_tokens=max_tok, messages=cont_msgs)
                 full_code += cr.choices[0].message.content or ""
                 truncated = (cr.choices[0].finish_reason == "length")
                 input_tok += cr.usage.prompt_tokens
@@ -559,9 +719,9 @@ molto spazio, produci un file alla volta in modo completo prima di passare al su
             else:
                 cs = openai_client.chat.completions.create(
                     model=model_id, max_tokens=max_tok, stream=True,
-                    stream_options={"include_usage": True}, messages=cont_messages)
+                    stream_options={"include_usage": True}, messages=cont_msgs)
                 cont_text = ""
-                last_finish_reason = None
+                last_finish = None
                 for cev in cs:
                     if cev.choices:
                         delta = cev.choices[0].delta.content or ""
@@ -569,15 +729,16 @@ molto spazio, produci un file alla volta in modo completo prima di passare al su
                         if delta:
                             emit(q, "agent_chunk", {"agent": agent_key, "text": delta})
                         if cev.choices[0].finish_reason:
-                            last_finish_reason = cev.choices[0].finish_reason
+                            last_finish = cev.choices[0].finish_reason
                     if hasattr(cev, "usage") and cev.usage:
                         input_tok += cev.usage.prompt_tokens
                         output_tok += cev.usage.completion_tokens
-                truncated = (last_finish_reason == "length")
+                truncated = (last_finish == "length")
                 full_code += cont_text
 
     if truncated:
-        emit(q, "agent_chunk", {"agent": agent_key, "text": "\n\n[⚠ raggiunto limite massimo continuazioni — il codice potrebbe essere incompleto]"})
+        emit(q, "agent_chunk", {"agent": agent_key,
+            "text": "\n\n[⚠ raggiunto limite massimo continuazioni — codice potrebbe essere incompleto]"})
 
     total = add_cost(session_id, model_id, input_tok, output_tok)
     emit(q, "cost_update", {
@@ -591,10 +752,10 @@ molto spazio, produci un file alla volta in modo completo prima di passare al su
     })
     emit(q, "agent_end", {"agent": agent_key})
 
-    # ── Salva output ────────────────────────────────────────────────────────
+    # ── Salva output ──────────────────────────────────────────────────────
     import re as _re, time as _t
     words = _re.findall(r"[a-zA-Z]+", task)[:3]
-    slug  = "_".join(w.lower() for w in words) or "task"
+    slug = "_".join(w.lower() for w in words) or "task"
     proj_dir = WORKSPACE / slug
     proj_dir.mkdir(parents=True, exist_ok=True)
 
@@ -605,8 +766,7 @@ molto spazio, produci un file alla volta in modo completo prima di passare al su
     saved_paths = []
     if file_blocks:
         for rel_path, content in file_blocks:
-            rel_path = rel_path.strip().lstrip("/")
-            dest = proj_dir / rel_path
+            dest = proj_dir / rel_path.strip().lstrip("/")
             dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_text(content.strip(), encoding="utf-8")
             saved_paths.append(str(dest))
@@ -618,14 +778,12 @@ molto spazio, produci un file alla volta in modo completo prima di passare al su
         saved_paths.append(str(dest))
 
     emit(q, "file_saved", {
-        "path":       str(proj_dir),
-        "files":      saved_paths,
+        "path": str(proj_dir),
+        "files": saved_paths,
         "multi_file": len(saved_paths) > 1,
-        "iteration":  iteration,
+        "iteration": iteration,
     })
-
     return full_code
-
 
 # ─────────────────────────────────────────────
 # PARALLEL IMPLEMENTATION
@@ -634,14 +792,17 @@ def run_implementer_parallel(anthropic_client: anthropic.Anthropic, openai_clien
                              session_id: str, task: str,
                              chunks: list, iteration: int, model_id: str,
                              q: queue.Queue) -> dict:
-    """
-    Lancia N worker in parallelo (uno per chunk) usando Claude o GPT
-    a seconda del provider del modello scelto.
-    """
+
     MAX_WORKERS = 3
     chunk_results = {}
     chunk_errors  = {}
     provider = MODELS.get(model_id, {}).get("provider", "openai")
+
+    # Fallback Google se SDK mancante
+    if provider == "google" and not GOOGLE_AVAILABLE:
+        emit(q, "agent_chunk", {"agent": "gpt", "text": "⚠ google-genai non disponibile — fallback a gpt-4.1 per i chunk"})
+        model_id = "gpt-4.1"
+        provider = "openai"
 
     shared_context = "\n".join(
         f"- Chunk {ch['id']} ({ch['title']}): implementato da un altro worker in parallelo"
@@ -654,34 +815,50 @@ def run_implementer_parallel(anthropic_client: anthropic.Anthropic, openai_clien
         spec  = chunk["spec"]
 
         emit(q, "parallel_chunk_running", {"chunk_id": cid})
+
         system = (
             "Sei l'Implementer parallelo di Ettorino.\n"
             "Stai implementando UN SOLO chunk di un progetto più grande.\n"
             "Altri worker stanno implementando gli altri chunk in parallelo.\n\n"
             "FORMATO OUTPUT — OBBLIGATORIO:\n"
-            "Usa SEMPRE questo formato per ogni file:\n"
             "### FILE: percorso/relativo/file.py\n"
             "(codice completo)\n\n"
-            "CONTESTO PROGETTO — gli altri chunk in parallelo:\n"
+            "CONTESTO PROGETTO — altri chunk in parallelo:\n"
             + shared_context +
             "\n\nOgni file deve essere COMPLETO. Non troncare mai il codice."
         )
         prompt = f"TASK ORIGINALE: {task}\n\nIL TUO CHUNK — {title}:\n{spec}"
 
         tier    = MODELS.get(model_id, {}).get("tier", "hard")
-        max_tok = {"easy": 4000, "medium": 8000, "hard": 16000, "hard-mid": 12000}.get(tier, 8000)
+        max_tok = {"easy": 4000, "medium": 8000, "hard-mid": 12000, "hard": 16000}.get(tier, 8000)
 
         full_code = ""
-        truncated = False
         input_tok_c = output_tok_c = 0
 
         try:
-            if provider == "anthropic":
-                # ── Claude parallel worker ──────────────────────────────────
+            # ── Google Gemini worker ──────────────────────────────────────
+            if provider == "google":
+                google_client = get_google_client()
+                full_code, input_tok_c, output_tok_c, truncated = _gemini_generate(
+                    google_client, model_id, system, prompt, max_tok, "gpt", q
+                )
+                MAX_CONT = 2
+                cont = 0
+                while truncated and cont < MAX_CONT:
+                    cont += 1
+                    emit(q, "parallel_chunk_continuation", {"chunk_id": cid, "attempt": cont})
+                    cont_prompt = f"{prompt}\n\n[CODICE FINORA]\n{full_code}\n\nContinua da dove ti sei fermato."
+                    ct, it, ot, truncated = _gemini_generate(
+                        google_client, model_id, system, cont_prompt, max_tok, "gpt", q
+                    )
+                    full_code += ct
+                    input_tok_c += it
+                    output_tok_c += ot
+
+            # ── Anthropic worker ──────────────────────────────────────────
+            elif provider == "anthropic":
                 with anthropic_client.messages.stream(
-                    model=model_id,
-                    max_tokens=max_tok,
-                    system=system,
+                    model=model_id, max_tokens=max_tok, system=system,
                     messages=[{"role": "user", "content": prompt}]
                 ) as stream:
                     for text in stream.text_stream:
@@ -697,110 +874,88 @@ def run_implementer_parallel(anthropic_client: anthropic.Anthropic, openai_clien
                     cont += 1
                     emit(q, "parallel_chunk_continuation", {"chunk_id": cid, "attempt": cont})
                     with anthropic_client.messages.stream(
-                        model=model_id,
-                        max_tokens=max_tok,
-                        system=system,
+                        model=model_id, max_tokens=max_tok, system=system,
                         messages=[
-                            {"role": "user",      "content": prompt},
+                            {"role": "user", "content": prompt},
                             {"role": "assistant", "content": full_code},
-                            {"role": "user",      "content": "Continua esattamente da dove ti sei fermato."},
+                            {"role": "user", "content": "Continua da dove ti sei fermato."},
                         ]
                     ) as cs:
-                        cont_text = ""
+                        ct = ""
                         for text in cs.text_stream:
-                            cont_text += text
-                        final_cont = cs.get_final_message()
-                        input_tok_c  += final_cont.usage.input_tokens
-                        output_tok_c += final_cont.usage.output_tokens
-                        truncated     = (final_cont.stop_reason == "max_tokens")
-                    full_code += cont_text
+                            ct += text
+                        fc = cs.get_final_message()
+                        input_tok_c  += fc.usage.input_tokens
+                        output_tok_c += fc.usage.output_tokens
+                        truncated     = (fc.stop_reason == "max_tokens")
+                    full_code += ct
 
+            # ── OpenAI worker ─────────────────────────────────────────────
             else:
-                # ── OpenAI parallel worker ──────────────────────────────────
                 if model_id == "o3":
                     resp = openai_client.chat.completions.create(
-                        model=model_id,
-                        max_completion_tokens=max_tok,
-                        messages=[
-                            {"role": "system", "content": system},
-                            {"role": "user",   "content": prompt},
-                        ]
+                        model=model_id, max_completion_tokens=max_tok,
+                        messages=[{"role": "system", "content": system},
+                                  {"role": "user",   "content": prompt}]
                     )
-                    full_code     = resp.choices[0].message.content or ""
-                    truncated     = resp.choices[0].finish_reason == "length"
-                    input_tok_c   = resp.usage.prompt_tokens
-                    output_tok_c  = resp.usage.completion_tokens
-                    emit(q, "parallel_chunk_stream", {
-                        "chunk_id": cid,
-                        "tok": output_tok_c,
-                        "lines": full_code.count("\n"),
-                    })
+                    full_code    = resp.choices[0].message.content or ""
+                    truncated    = resp.choices[0].finish_reason == "length"
+                    input_tok_c  = resp.usage.prompt_tokens
+                    output_tok_c = resp.usage.completion_tokens
                 else:
                     stream = openai_client.chat.completions.create(
-                        model=model_id,
-                        max_tokens=max_tok,
-                        stream=True,
+                        model=model_id, max_tokens=max_tok, stream=True,
                         stream_options={"include_usage": True},
-                        messages=[
-                            {"role": "system", "content": system},
-                            {"role": "user",   "content": prompt},
-                        ]
+                        messages=[{"role": "system", "content": system},
+                                  {"role": "user",   "content": prompt}]
                     )
-                last_finish = None
-                input_tok_c = output_tok_c = 0
-                _chunk_tok_count = 0
-                for chunk_ev in stream:
-                    if chunk_ev.choices:
-                        delta = chunk_ev.choices[0].delta.content or ""
-                        full_code += delta
-                        if delta:
-                            _chunk_tok_count += 1
-                            if _chunk_tok_count % 40 == 0:
-                                emit(q, "parallel_chunk_stream", {
-                                    "chunk_id": cid,
-                                    "tok": _chunk_tok_count,
-                                    "lines": full_code.count("\n"),
-                                })
-                        if chunk_ev.choices[0].finish_reason:
-                            last_finish = chunk_ev.choices[0].finish_reason
-                    if hasattr(chunk_ev, "usage") and chunk_ev.usage:
-                        input_tok_c  = chunk_ev.usage.prompt_tokens
-                        output_tok_c = chunk_ev.usage.completion_tokens
-                truncated = (last_finish == "length")
+                    last_finish = None
+                    _tok_count = 0
+                    for chunk_ev in stream:
+                        if chunk_ev.choices:
+                            delta = chunk_ev.choices[0].delta.content or ""
+                            full_code += delta
+                            if delta:
+                                _tok_count += 1
+                                if _tok_count % 40 == 0:
+                                    emit(q, "parallel_chunk_stream", {
+                                        "chunk_id": cid,
+                                        "tok": _tok_count,
+                                        "lines": full_code.count("\n"),
+                                    })
+                            if chunk_ev.choices[0].finish_reason:
+                                last_finish = chunk_ev.choices[0].finish_reason
+                        if hasattr(chunk_ev, "usage") and chunk_ev.usage:
+                            input_tok_c  = chunk_ev.usage.prompt_tokens
+                            output_tok_c = chunk_ev.usage.completion_tokens
+                    truncated = (last_finish == "length")
 
-                # Auto-continuazione OpenAI
-                MAX_CONT = 2
-                cont = 0
-                while truncated and cont < MAX_CONT:
-                    cont += 1
-                    emit(q, "parallel_chunk_continuation", {"chunk_id": cid, "attempt": cont})
-                    cont_msgs = [
-                        {"role": "system",    "content": system},
-                        {"role": "user",      "content": prompt},
-                        {"role": "assistant", "content": full_code},
-                        {"role": "user",      "content": "Continua esattamente da dove ti sei fermato."},
-                    ]
-                    if model_id == "o3":
-                        cr = openai_client.chat.completions.create(
-                            model=model_id, max_completion_tokens=max_tok, messages=cont_msgs)
-                        full_code += cr.choices[0].message.content or ""
-                        truncated  = cr.choices[0].finish_reason == "length"
-                        input_tok_c  += cr.usage.prompt_tokens
-                        output_tok_c += cr.usage.completion_tokens
-                    else:
+                    MAX_CONT = 2
+                    cont = 0
+                    while truncated and cont < MAX_CONT:
+                        cont += 1
+                        emit(q, "parallel_chunk_continuation", {"chunk_id": cid, "attempt": cont})
+                        cont_msgs = [
+                            {"role": "system",    "content": system},
+                            {"role": "user",      "content": prompt},
+                            {"role": "assistant", "content": full_code},
+                            {"role": "user",      "content": "Continua da dove ti sei fermato."},
+                        ]
                         cs = openai_client.chat.completions.create(
                             model=model_id, max_tokens=max_tok, stream=True,
                             stream_options={"include_usage": True}, messages=cont_msgs)
                         last_finish = None
+                        ct = ""
                         for cev in cs:
                             if cev.choices:
-                                full_code += cev.choices[0].delta.content or ""
+                                ct += cev.choices[0].delta.content or ""
                                 if cev.choices[0].finish_reason:
                                     last_finish = cev.choices[0].finish_reason
                             if hasattr(cev, "usage") and cev.usage:
                                 input_tok_c  += cev.usage.prompt_tokens
                                 output_tok_c += cev.usage.completion_tokens
                         truncated = (last_finish == "length")
+                        full_code += ct
 
             add_cost(session_id, model_id, input_tok_c, output_tok_c)
             emit(q, "cost_update", {
@@ -819,14 +974,12 @@ def run_implementer_parallel(anthropic_client: anthropic.Anthropic, openai_clien
             emit(q, "parallel_chunk_error", {"chunk_id": cid, "error": str(e)})
             return cid, "", str(e)
 
-    # Lancia i worker in parallelo (può essere chiamato più volte nel loop)
     emit(q, "parallel_start", {
-        "chunks": [{"id": ch["id"], "title": ch["title"]} for ch in chunks],
+        "chunks":  [{"id": ch["id"], "title": ch["title"]} for ch in chunks],
         "workers": min(MAX_WORKERS, len(chunks))
     })
-    time.sleep(0.3)  # lascia tempo al frontend di renderizzare la dashboard
+    time.sleep(0.3)
 
-    # Pre-emit all chunk_start events synchronously so dashboard shows all workers as "waiting"
     for ch in chunks:
         emit(q, "parallel_chunk_start", {"chunk_id": ch["id"], "title": ch["title"]})
     time.sleep(0.2)
@@ -845,7 +998,6 @@ def run_implementer_parallel(anthropic_client: anthropic.Anthropic, openai_clien
         "failed":    list(chunk_errors.keys()),
     })
 
-    # Salva i file di ogni chunk nel workspace
     import re as _re
     words = _re.findall(r"[a-zA-Z]+", task)[:3]
     slug  = "_".join(w.lower() for w in words) or "task"
@@ -855,13 +1007,11 @@ def run_implementer_parallel(anthropic_client: anthropic.Anthropic, openai_clien
     all_saved = []
     for cid in sorted(chunk_results.keys()):
         chunk_code = chunk_results[cid]
-        # Try multiple FILE header patterns GPT might use
         file_blocks = _re.findall(
             r"###\s*FILE\s*(?:\d+\s*)?[:\-]?\s*([\w./\-]+\.\w+)\s*\n([\s\S]*?)(?=###\s*FILE|$)",
             chunk_code
         )
         if not file_blocks:
-            # Try without the \n separator (some models don't add newline)
             file_blocks = _re.findall(
                 r"###\s*FILE\s*(?:\d+\s*)?[:\-]?\s*([\w./\-]+\.\w+)\s*([\s\S]*?)(?=###\s*FILE|$)",
                 chunk_code
@@ -879,48 +1029,129 @@ def run_implementer_parallel(anthropic_client: anthropic.Anthropic, openai_clien
 
     if all_saved:
         emit(q, "file_saved", {
-            "path": str(proj_dir),
-            "files": all_saved,
-            "multi_file": len(all_saved) > 1,
-            "iteration": iteration,
+            "path": str(proj_dir), "files": all_saved,
+            "multi_file": len(all_saved) > 1, "iteration": iteration,
         })
 
     return chunk_results
 
+# ─────────────────────────────────────────────
+# WORKSPACE SUMMARY
+# ─────────────────────────────────────────────
 def get_project_files_summary(task: str, include_content: bool = True, max_file_bytes: int = 8000) -> str:
-    """
-    Restituisce l'elenco dei file nel workspace + contenuto per file piccoli.
-    Claude può così verificare il codice senza chiedere all'utente.
-    """
     import re as _re
     words = _re.findall(r"[a-zA-Z]+", task)[:3]
-    slug = "_".join(w.lower() for w in words) or "task"
+    slug  = "_".join(w.lower() for w in words) or "task"
     proj_dir = WORKSPACE / slug
     if not proj_dir.exists():
         return ""
     files = sorted(f for f in proj_dir.rglob("*") if f.is_file())
     if not files:
         return ""
-
     lines = [f"\n\nFILE GIÀ PRESENTI NEL WORKSPACE ({proj_dir}) — NON chiedere questi file all'utente:"]
     text_exts = {".py", ".js", ".ts", ".html", ".css", ".json", ".yaml", ".yml",
                  ".toml", ".txt", ".md", ".sh", ".env", ".cfg", ".ini", ".xml"}
-
     for f in files:
-        rel = str(f.relative_to(proj_dir))
+        rel  = str(f.relative_to(proj_dir))
         size = f.stat().st_size
         if include_content and f.suffix.lower() in text_exts and size <= max_file_bytes:
             try:
                 content = f.read_text(encoding="utf-8")
                 lines.append(f"\n### FILE: {rel} ({size} bytes)\n```\n{content}\n```")
             except Exception:
-                lines.append(f"  - {rel} ({size} bytes) [errore lettura]")
+                lines.append(f" - {rel} ({size} bytes) [errore lettura]")
         else:
-            lines.append(f"  - {rel} ({size} bytes){' [troppo grande per mostrare]' if size > max_file_bytes else ''}")
-
+            lines.append(f" - {rel} ({size} bytes){' [troppo grande]' if size > max_file_bytes else ''}")
     return "\n".join(lines)
 
+
 # ─────────────────────────────────────────────
+# RIFLESSIONE POST-SESSIONE
+# Claude suggerisce cosa aggiungere a MEMORY.md
+# ─────────────────────────────────────────────
+REFLECT_MODEL = "claude-haiku-4-5"  # economico, basta per la riflessione
+
+def claude_reflect(client: anthropic.Anthropic, session_id: str,
+                   task: str, iterations: int, had_fixes: bool,
+                   q: queue.Queue):
+    """Chiamata leggera post-loop: Claude suggerisce bullet points per MEMORY.md.
+    Emette reflect_suggestions con lista di suggerimenti da approvare uno per uno."""
+
+    # Non riflettere se è andato liscio al primo colpo senza fix
+    if iterations <= 1 and not had_fixes:
+        return
+
+    emit(q, "reflect_start", {})
+
+    system = """Sei il sistema di memoria di Ettorino.
+Hai appena completato un task di coding. Il tuo compito è identificare
+1-3 lezioni concrete da ricordare per i task futuri.
+
+Concentrati SOLO su cose SPECIFICHE e AZIONABILI:
+- Pattern che hanno funzionato bene
+- Errori fatti dall\'implementer che si potrebbero prevenire con istruzioni migliori
+- Convenzioni o strutture da riusare
+
+NON suggerire ovvietà generiche ("testa sempre il codice", "scrivi commenti").
+NON suggerire più di 3 items.
+Se non c\'è nulla di veramente utile da ricordare, rispondi con lista vuota.
+
+Rispondi SOLO con JSON valido:
+{
+  "suggestions": [
+    {
+      "section": "Errori da non ripetere",
+      "text": "testo breve e specifico del bullet point"
+    }
+  ]
+}
+
+Sezioni disponibili: "Preferenze", "Pattern che funzionano", "Errori da non ripetere"
+"""
+
+    user_msg = f"""Task completato: {task}
+
+Iterazioni necessarie: {iterations}
+Fix richiesti durante il loop: {"sì" if had_fixes else "no"}
+
+Cosa vale la pena ricordare per i task futuri?"""
+
+    try:
+        response = client.messages.create(
+            model=REFLECT_MODEL,
+            max_tokens=400,
+            system=system,
+            messages=[{"role": "user", "content": user_msg}]
+        )
+        raw = response.content[0].text.strip()
+        input_tok  = response.usage.input_tokens
+        output_tok = response.usage.output_tokens
+        total = add_cost(session_id, REFLECT_MODEL, input_tok, output_tok)
+
+        emit(q, "cost_update", {
+            "model_id":    REFLECT_MODEL,
+            "model_label": MODELS[REFLECT_MODEL]["label"],
+            "provider":    "anthropic",
+            "input_tokens":  input_tok,
+            "output_tokens": output_tok,
+            "call_cost":     calc_cost(REFLECT_MODEL, input_tok, output_tok)[0],
+            "total_cost":    total,
+        })
+
+        clean = raw.replace("```json", "").replace("```", "").strip()
+        result = json.loads(clean)
+        suggestions = result.get("suggestions", [])
+
+        if suggestions:
+            emit(q, "reflect_suggestions", {"suggestions": suggestions})
+        else:
+            emit(q, "reflect_end", {"reason": "no_suggestions"})
+
+    except Exception as e:
+        emit(q, "reflect_end", {"reason": f"error: {e}"})
+
+# ─────────────────────────────────────────────
+# MAIN LOOP
 # ─────────────────────────────────────────────
 def run_agent_loop(session_id: str, task: str, q: queue.Queue):
     try:
@@ -946,7 +1177,6 @@ def run_agent_loop(session_id: str, task: str, q: queue.Queue):
     model_rationale        = classification.get("model_rationale", "")
     complexity_factors     = classification.get("complexity_factors", [])
 
-    # Se ha dubbi sul task → chiede prima di proporre i modelli
     if needs_clarification and clarification_question:
         emit(q, "waiting_human", {
             "question": clarification_question,
@@ -958,18 +1188,16 @@ def run_agent_loop(session_id: str, task: str, q: queue.Queue):
             emit(q, "timeout", {})
             return
         emit(q, "human_response", {"text": clarification})
-        # Riclassifica con il chiarimento
         task = f"{task}\n\nChiarimento dell'utente: {clarification}"
-        classification = classify_task(claude_client, session_id, task, q, silent=True)
-        difficulty             = classification.get("difficulty", "medium")
-        suggested_reasoner     = classification.get("suggested_reasoner", TIER_MODELS[difficulty]["reasoner"])
-        suggested_implementer  = classification.get("suggested_implementer", TIER_MODELS[difficulty]["implementer"])
-        est_cost               = classification.get("estimated_cost_usd", 0.0)
-        reasoning              = classification.get("reasoning", "")
-        model_rationale        = classification.get("model_rationale", "")
+        classification        = classify_task(claude_client, session_id, task, q, silent=True)
+        difficulty            = classification.get("difficulty", "medium")
+        suggested_reasoner    = classification.get("suggested_reasoner", TIER_MODELS[difficulty]["reasoner"])
+        suggested_implementer = classification.get("suggested_implementer", TIER_MODELS[difficulty]["implementer"])
+        est_cost              = classification.get("estimated_cost_usd", 0.0)
+        reasoning             = classification.get("reasoning", "")
+        model_rationale       = classification.get("model_rationale", "")
 
     # ── CONFERMA MODELLI ───────────────────────
-    # Applica eventuali override utente
     override = model_overrides.get(session_id, {})
     reasoner_model    = override.get("reasoner", suggested_reasoner)
     implementer_model = override.get("implementer", suggested_implementer)
@@ -995,7 +1223,6 @@ def run_agent_loop(session_id: str, task: str, q: queue.Queue):
         ],
     })
 
-    # Aspetta conferma o cambio modelli
     confirmation = wait_for_human(session_id, timeout=600)
     if confirmation is None:
         emit(q, "timeout", {})
@@ -1010,64 +1237,59 @@ def run_agent_loop(session_id: str, task: str, q: queue.Queue):
                 "reasoner_label":    MODELS[reasoner_model]["label"],
                 "implementer_label": MODELS[implementer_model]["label"],
             })
-        # se action == "confirm" procediamo con i modelli scelti
     except Exception:
-        pass  # risposta non JSON → procedi con i modelli suggeriti
+        pass
 
     # ── LOOP PRINCIPALE ────────────────────────
-    context = "Nessun codice ancora prodotto. Prima iterazione."
-    code = ""
-    feedback = ""
-    iteration = 0
+    context       = "Nessun codice ancora prodotto. Prima iterazione."
+    code          = ""
+    feedback      = ""
+    iteration     = 0
     max_iterations = int(os.environ.get("MAX_ITERATIONS", 10))
 
     while iteration < max_iterations:
         iteration += 1
         emit(q, "iteration_start", {"n": iteration, "max": max_iterations})
 
-        # Check if user requested stop
         if stop_flags.get(session_id):
             stop_flags.pop(session_id, None)
-            emit(q, "loop_end", {"success": False, "summary": "Interrotto dall'utente.",
-                                  "iterations": iteration, "total_cost": session_costs.get(session_id, {}).get("total", 0),
-                                  "by_model": session_costs.get(session_id, {}).get("by_model", {})})
+            emit(q, "loop_end", {
+                "success": False, "summary": "Interrotto dall'utente.",
+                "iterations": iteration,
+                "total_cost": session_costs.get(session_id, {}).get("total", 0),
+                "by_model":   session_costs.get(session_id, {}).get("by_model", {}),
+            })
             return
 
-        # Claude ragiona
-        result = claude_reason(claude_client, session_id, task, context,
-                               reasoner_model, iteration, q)
-        status = result.get("status", "ask")
+        result    = claude_reason(claude_client, session_id, task, context, reasoner_model, iteration, q)
+        status    = result.get("status", "ask")
         alignment = result.get("gpt_alignment", "ok")
 
         emit(q, "claude_result", {
-            "status":    status,
-            "thoughts":  result.get("thoughts", ""),
-            "alignment": alignment,
-            "iteration": iteration,
+            "status": status, "thoughts": result.get("thoughts", ""),
+            "alignment": alignment, "iteration": iteration,
         })
 
         if status == "done":
             total = session_costs[session_id]["total"]
-            # salva stato per eventuale continuazione
+            had_fixes = iteration > 1  # almeno un ciclo di fix
             session_state[session_id] = {
                 "code": code, "task": task,
                 "reasoner": reasoner_model, "implementer": implementer_model,
                 "iteration": iteration,
             }
             emit(q, "loop_end", {
-                "success":    True,
-                "summary":    result.get("summary", ""),
-                "iterations": iteration,
-                "total_cost": total,
-                "by_model":   session_costs[session_id]["by_model"],
+                "success": True, "summary": result.get("summary", ""),
+                "iterations": iteration, "total_cost": total,
+                "by_model": session_costs[session_id]["by_model"],
             })
+            # Riflessione post-sessione (asincrona rispetto al done banner)
+            claude_reflect(claude_client, session_id, task, iteration, had_fixes, q)
             return
 
         elif status == "ask":
             emit(q, "waiting_human", {
-                "question":   result.get("question", ""),
-                "session_id": session_id,
-                "context":    "loop",
+                "question": result.get("question", ""), "session_id": session_id, "context": "loop"
             })
             human_resp = wait_for_human(session_id, timeout=int(os.environ.get("HUMAN_TIMEOUT", 300)))
             if human_resp is None:
@@ -1080,77 +1302,53 @@ def run_agent_loop(session_id: str, task: str, q: queue.Queue):
             spec = result.get("spec", "")
             emit(q, "spec_ready", {"spec": spec})
             code = run_implementer(claude_client, openai_client, session_id, task, spec, "",
-                                 iteration, implementer_model, q)
+                                   iteration, implementer_model, q)
             context = (f"Codice prodotto (iterazione {iteration}):\n```python\n{code}\n```\n"
-                       "Verifica correttezza e completezza rispetto al task originale."
-                       + get_project_files_summary(task))
+                       + get_project_files_summary(task)
+                       + "\nVerifica correttezza e completezza rispetto al task originale.")
 
         elif status == "implement_parallel":
             chunks = result.get("parallel_chunks", [])
             if not chunks or len(chunks) < 2:
-                # fallback a implement normale se chunks mancanti
                 spec = result.get("spec", "") or "Implementa il task come specificato."
                 emit(q, "spec_ready", {"spec": spec})
                 code = run_implementer(claude_client, openai_client, session_id, task, spec, "",
-                                     iteration, implementer_model, q)
+                                       iteration, implementer_model, q)
             else:
                 chunk_results = run_implementer_parallel(
-                    claude_client, openai_client, session_id, task, chunks, iteration, implementer_model, q
+                    claude_client, openai_client, session_id, task,
+                    chunks, iteration, implementer_model, q
                 )
-                # Combina tutti i chunk per il contesto di review
-                combined = "\n\n".join(
-                    f"=== CHUNK {cid} ===\n{chunk_results[cid]}"
-                    for cid in sorted(chunk_results.keys())
-                    if chunk_results.get(cid)
-                )
-                code = combined
-
-            # Costruisci contesto completo per Claude Integrator
-            # Usa un approccio strutturato: sommario + codice chunk per chunk
-            if chunk_results:
-                # Sommario strutturato: file prodotti da ogni chunk
                 import re as _re2
                 chunk_summaries = []
                 for cid in sorted(chunk_results.keys()):
-                    chunk_code = chunk_results.get(cid, "")
-                    files_in_chunk = _re2.findall(
-                        r"###\s*FILE\s*[:\-]?\s*([\w./\-]+\.\w+)",
-                        chunk_code
-                    )
-                    lines_count = chunk_code.count("\n")
-                    summary = f"Chunk {cid}: {len(files_in_chunk)} file, {lines_count} righe"
-                    if files_in_chunk:
-                        summary += " — " + ", ".join(files_in_chunk[:8])
-                        if len(files_in_chunk) > 8:
-                            summary += f" (+{len(files_in_chunk)-8} altri)"
-                    chunk_summaries.append(summary)
+                    cc = chunk_results.get(cid, "")
+                    files_in = _re2.findall(r"###\s*FILE\s*[:\-]?\s*([\w./\-]+\.\w+)", cc)
+                    s = f"Chunk {cid}: {len(files_in)} file, {cc.count(chr(10))} righe"
+                    if files_in:
+                        s += " — " + ", ".join(files_in[:8])
+                    chunk_summaries.append(s)
 
-                # Contesto completo ma gestibile:
-                # - Sommario in cima
-                # - Poi ogni chunk separato (Claude può leggere tutto)
-                context_parts = [
-                    f"Codice prodotto in parallelo (iterazione {iteration}):",
-                    f"SOMMARIO CHUNK:\n" + "\n".join(chunk_summaries),
-                    "\nCODICE COMPLETO PER CHUNK:",
-                ]
-                for cid in sorted(chunk_results.keys()):
-                    chunk_code = chunk_results.get(cid, "")
-                    context_parts.append(
-                        f"\n=== CHUNK {cid} ({len(chunk_code)} chars) ===\n{chunk_code}"
-                    )
-                context_parts.append(
-                    "\nVerifica: 1) ogni file è completo, 2) import incrociati corretti, "
-                    "3) naming consistency, 4) interfacce compatibili tra chunk. "
-                    "Se tutto OK → status done. Se ci sono problemi → status fix con feedback specifico."
+                combined = "\n\n".join(
+                    f"=== CHUNK {cid} ===\n{chunk_results[cid]}"
+                    for cid in sorted(chunk_results.keys()) if chunk_results.get(cid)
                 )
-                context_parts.append(get_project_files_summary(task))
-                context = "\n".join(context_parts)
-            else:
+                code = combined
                 context = (
-                    f"Codice prodotto (iterazione {iteration}):\n```python\n{code}\n```\n"
-                    "Verifica correttezza e completezza rispetto al task originale."
-                    + get_project_files_summary(task)
+                    f"Codice prodotto in parallelo (iterazione {iteration}):\n"
+                    f"SOMMARIO:\n" + "\n".join(chunk_summaries) +
+                    "\n\nCODICE COMPLETO PER CHUNK:\n" +
+                    "\n".join(f"\n=== CHUNK {cid} ===\n{chunk_results.get(cid,'')}"
+                              for cid in sorted(chunk_results.keys())) +
+                    "\n\nVerifica: 1) file completi, 2) import incrociati corretti, "
+                    "3) naming consistency, 4) interfacce compatibili. "
+                    "Se tutto OK → done. Se problemi → fix con feedback specifico per chunk."
                 )
+                continue  # skip the default context assignment below
+
+            context = (f"Codice prodotto (iterazione {iteration}):\n```python\n{code}\n```\n"
+                       + get_project_files_summary(task)
+                       + "\nVerifica correttezza e completezza rispetto al task originale.")
 
         elif status == "fix":
             feedback = result.get("feedback", "")
@@ -1159,31 +1357,27 @@ def run_agent_loop(session_id: str, task: str, q: queue.Queue):
             else:
                 emit(q, "fix_needed", {"feedback": feedback})
             code = run_implementer(claude_client, openai_client, session_id, task,
-                                 f"Correggi il codice:\n\nCODICE:\n{code}",
-                                 feedback, iteration, implementer_model, q)
+                                   f"Correggi il codice:\n\nCODICE:\n{code}",
+                                   feedback, iteration, implementer_model, q)
             context = (f"Codice corretto (iterazione {iteration}):\n```python\n{code}\n```\n"
-                       "Verifica di nuovo."
-                       + get_project_files_summary(task))
+                       + get_project_files_summary(task)
+                       + "\nVerifica di nuovo.")
 
-    # Max iterazioni raggiunto
     total = session_costs[session_id]["total"]
     emit(q, "loop_end", {
-        "success":    False,
-        "summary":    f"Raggiunto limite di {max_iterations} iterazioni.",
-        "iterations": iteration,
-        "total_cost": total,
-        "by_model":   session_costs[session_id]["by_model"],
+        "success": False, "summary": f"Raggiunto limite di {max_iterations} iterazioni.",
+        "iterations": iteration, "total_cost": total,
+        "by_model": session_costs[session_id]["by_model"],
     })
 
 
 def continue_agent_loop(session_id: str, followup: str, q: queue.Queue):
-    """Riprende il loop: riclassifica il followup, propone modelli, poi esegue."""
-    state = session_state.get(session_id, {})
-    code = state.get("code", "")
-    task = state.get("task", "")
+    state         = session_state.get(session_id, {})
+    code          = state.get("code", "")
+    task          = state.get("task", "")
     prev_reasoner = state.get("reasoner", TIER_MODELS["medium"]["reasoner"])
-    prev_implementer = state.get("implementer", TIER_MODELS["medium"]["implementer"])
-    iteration = state.get("iteration", 0)
+    prev_impl     = state.get("implementer", TIER_MODELS["medium"]["implementer"])
+    iteration     = state.get("iteration", 0)
 
     try:
         claude_client = get_anthropic_client()
@@ -1195,18 +1389,16 @@ def continue_agent_loop(session_id: str, followup: str, q: queue.Queue):
     combined_task = f"{task} | {followup}"
     emit(q, "loop_start", {"task": f"[Continuazione] {followup}"})
 
-    # ── FASE 0: riclassifica il followup tenendo conto del codice esistente ──
     classify_input = (
         f"TASK ORIGINALE: {task}\n\n"
         f"CODICE GIÀ PRODOTTO ({len(code)} chars):\n```python\n{code[:800]}{'...' if len(code)>800 else ''}\n```\n\n"
         f"RICHIESTA DI CONTINUAZIONE: {followup}\n\n"
-        f"Valuta la difficoltà di questa modifica/aggiunta rispetto al codice esistente."
+        f"Valuta la difficoltà di questa modifica rispetto al codice esistente."
     )
-    classification = classify_task(claude_client, session_id, classify_input, q)
-
+    classification        = classify_task(claude_client, session_id, classify_input, q)
     difficulty            = classification.get("difficulty", "medium")
     suggested_reasoner    = classification.get("suggested_reasoner", prev_reasoner)
-    suggested_implementer = classification.get("suggested_implementer", prev_implementer)
+    suggested_implementer = classification.get("suggested_implementer", prev_impl)
     needs_clarification   = classification.get("needs_clarification", False)
     clarification_q       = classification.get("clarification_question")
     est_cost              = classification.get("estimated_cost_usd", 0.0)
@@ -1214,7 +1406,6 @@ def continue_agent_loop(session_id: str, followup: str, q: queue.Queue):
     model_rationale       = classification.get("model_rationale", "")
     complexity_factors    = classification.get("complexity_factors", [])
 
-    # Chiarimento se necessario
     if needs_clarification and clarification_q:
         emit(q, "waiting_human", {"question": clarification_q, "session_id": session_id, "context": "clarification"})
         clarification = wait_for_human(session_id, timeout=300)
@@ -1224,28 +1415,23 @@ def continue_agent_loop(session_id: str, followup: str, q: queue.Queue):
         emit(q, "human_response", {"text": clarification})
         combined_task += f" | Chiarimento: {clarification}"
 
-    # ── CONFERMA MODELLI ──────────────────────────────────────────────────────
-    override = model_overrides.get(session_id, {})
+    override          = model_overrides.get(session_id, {})
     reasoner_model    = override.get("reasoner", suggested_reasoner)
     implementer_model = override.get("implementer", suggested_implementer)
 
     emit(q, "confirm_models", {
-        "session_id":         session_id,
-        "difficulty":         difficulty,
-        "reasoning":          reasoning,
-        "model_rationale":    model_rationale,
+        "session_id": session_id, "difficulty": difficulty,
+        "reasoning": reasoning, "model_rationale": model_rationale,
         "complexity_factors": complexity_factors,
-        "reasoner_model":     reasoner_model,
-        "reasoner_label":     MODELS[reasoner_model]["label"],
-        "implementer_model":  implementer_model,
-        "implementer_label":  MODELS[implementer_model]["label"],
-        "estimated_cost":     est_cost,
+        "reasoner_model": reasoner_model, "reasoner_label": MODELS[reasoner_model]["label"],
+        "implementer_model": implementer_model, "implementer_label": MODELS[implementer_model]["label"],
+        "estimated_cost": est_cost,
         "available_reasoners": [
-            {"id": k, "label": v["label"], "tier": v["tier"], "available": v.get("available", True)}
+            {"id": k, "label": v["label"], "tier": v["tier"]}
             for k, v in MODELS.items() if "reasoner" in v["role"]
         ],
         "available_implementers": [
-            {"id": k, "label": v["label"], "tier": v["tier"], "provider": v["provider"], "available": v.get("available", True)}
+            {"id": k, "label": v["label"], "tier": v["tier"], "provider": v["provider"]}
             for k, v in MODELS.items() if "implementer" in v["role"]
         ],
     })
@@ -1267,35 +1453,38 @@ def continue_agent_loop(session_id: str, followup: str, q: queue.Queue):
     except Exception:
         pass
 
-    # ── LOOP PRINCIPALE ──────────────────────────────────────────────────────
     context = (
         f"CODICE PRODOTTO FINORA:\n```python\n{code}\n```\n\n"
-        f"TASK ORIGINALE: {task}\n\n"
-        f"RICHIESTA DI CONTINUAZIONE: {followup}\n\n"
+        f"TASK ORIGINALE: {task}\n\nRICHIESTA DI CONTINUAZIONE: {followup}\n\n"
         f"Analizza il codice esistente e produci le specifiche per la modifica richiesta."
+        + get_project_files_summary(task)
     )
+
     max_iterations = int(os.environ.get("MAX_ITERATIONS", 10))
-    start_iter = iteration
+    start_iter     = iteration
 
     while iteration < start_iter + max_iterations:
         iteration += 1
         emit(q, "iteration_start", {"n": iteration, "max": start_iter + max_iterations})
 
-        # Check if user requested stop
         if stop_flags.get(session_id):
             stop_flags.pop(session_id, None)
-            emit(q, "loop_end", {"success": False, "summary": "Interrotto dall'utente.",
-                                  "iterations": iteration, "total_cost": session_costs.get(session_id, {}).get("total", 0),
-                                  "by_model": session_costs.get(session_id, {}).get("by_model", {})})
+            emit(q, "loop_end", {
+                "success": False, "summary": "Interrotto dall'utente.",
+                "iterations": iteration,
+                "total_cost": session_costs.get(session_id, {}).get("total", 0),
+                "by_model":   session_costs.get(session_id, {}).get("by_model", {}),
+            })
             return
 
-        result = claude_reason(claude_client, session_id, combined_task, context,
-                               reasoner_model, iteration, q)
-        status = result.get("status", "ask")
+        result    = claude_reason(claude_client, session_id, combined_task, context, reasoner_model, iteration, q)
+        status    = result.get("status", "ask")
         alignment = result.get("gpt_alignment", "ok")
 
-        emit(q, "claude_result", {"status": status, "thoughts": result.get("thoughts", ""),
-                                  "alignment": alignment, "iteration": iteration})
+        emit(q, "claude_result", {
+            "status": status, "thoughts": result.get("thoughts", ""),
+            "alignment": alignment, "iteration": iteration,
+        })
 
         if status == "done":
             total = session_costs[session_id]["total"]
@@ -1312,8 +1501,9 @@ def continue_agent_loop(session_id: str, followup: str, q: queue.Queue):
             return
 
         elif status == "ask":
-            emit(q, "waiting_human", {"question": result.get("question", ""),
-                                       "session_id": session_id, "context": "loop"})
+            emit(q, "waiting_human", {
+                "question": result.get("question", ""), "session_id": session_id, "context": "loop"
+            })
             human_resp = wait_for_human(session_id, timeout=int(os.environ.get("HUMAN_TIMEOUT", 300)))
             if human_resp is None:
                 emit(q, "timeout", {})
@@ -1325,10 +1515,10 @@ def continue_agent_loop(session_id: str, followup: str, q: queue.Queue):
             spec = result.get("spec", "")
             emit(q, "spec_ready", {"spec": spec})
             code = run_implementer(claude_client, openai_client, session_id, combined_task, spec, "",
-                                 iteration, implementer_model, q)
+                                   iteration, implementer_model, q)
             context = (f"Codice aggiornato (iterazione {iteration}):\n```python\n{code}\n```\n"
-                       "Verifica correttezza e completezza rispetto a task + continuazione."
-                       + get_project_files_summary(task))
+                       + get_project_files_summary(task)
+                       + "\nVerifica correttezza e completezza.")
 
         elif status == "fix":
             feedback = result.get("feedback", "")
@@ -1337,11 +1527,11 @@ def continue_agent_loop(session_id: str, followup: str, q: queue.Queue):
             else:
                 emit(q, "fix_needed", {"feedback": feedback})
             code = run_implementer(claude_client, openai_client, session_id, combined_task,
-                                 f"Correggi il codice:\n\nCODICE:\n{code}",
-                                 feedback, iteration, implementer_model, q)
+                                   f"Correggi il codice:\n\nCODICE:\n{code}",
+                                   feedback, iteration, implementer_model, q)
             context = (f"Codice corretto (iterazione {iteration}):\n```python\n{code}\n```\n"
-                       "Verifica di nuovo."
-                       + get_project_files_summary(task))
+                       + get_project_files_summary(task)
+                       + "\nVerifica di nuovo.")
 
     total = session_costs[session_id]["total"]
     emit(q, "loop_end", {
@@ -1360,18 +1550,14 @@ def index():
 
 @app.route("/run", methods=["POST"])
 def run():
-    data    = request.json or {}
-    task    = (data.get("task") or "").strip()
+    data       = request.json or {}
+    task       = (data.get("task") or "").strip()
     session_id = data.get("session_id") or f"s{int(time.time()*1000)}"
     if not task:
         return jsonify({"error": "task vuoto"}), 400
-
     q = queue.Queue()
     event_queues[session_id] = q
-
-    thread = threading.Thread(target=run_agent_loop, args=(session_id, task, q), daemon=True)
-    thread.start()
-
+    threading.Thread(target=run_agent_loop, args=(session_id, task, q), daemon=True).start()
     return jsonify({"session_id": session_id})
 
 @app.route("/stream/<session_id>")
@@ -1379,7 +1565,6 @@ def stream(session_id):
     q = event_queues.get(session_id)
     if not q:
         return "Session not found", 404
-
     def generate():
         while True:
             try:
@@ -1389,7 +1574,6 @@ def stream(session_id):
                     break
             except queue.Empty:
                 yield "data: {\"type\":\"ping\"}\n\n"
-
     return Response(generate(), mimetype="text/event-stream",
                     headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
@@ -1401,81 +1585,71 @@ def respond(session_id):
 
 @app.route("/continue", methods=["POST"])
 def continue_run():
-    data = request.json or {}
+    data       = request.json or {}
     session_id = data.get("session_id", "").strip()
-    followup = (data.get("followup") or "").strip()
+    followup   = (data.get("followup") or "").strip()
     if not session_id or not followup:
         return jsonify({"error": "session_id o followup mancante"}), 400
     if session_id not in session_state:
         return jsonify({"error": "sessione non trovata o già scaduta"}), 404
-
     q = queue.Queue()
     event_queues[session_id] = q
-
-    thread = threading.Thread(target=continue_agent_loop, args=(session_id, followup, q), daemon=True)
-    thread.start()
-
+    threading.Thread(target=continue_agent_loop, args=(session_id, followup, q), daemon=True).start()
     return jsonify({"session_id": session_id})
 
 @app.route("/stop/<session_id>", methods=["POST"])
 def stop(session_id):
     stop_flags[session_id] = True
-    # also push a sentinel to unblock any wait_for_human
     human_responses[session_id] = "__stop__"
     return jsonify({"ok": True})
 
 @app.route("/download")
 def download():
-    """Serve la cartella del progetto come ZIP scaricabile."""
     import zipfile, io
     path_str = request.args.get("path", "").strip()
     if not path_str:
         return "path mancante", 400
     proj_path = Path(path_str)
     if not proj_path.exists() or not proj_path.is_dir():
-        # Try as relative to WORKSPACE
         proj_path = WORKSPACE / path_str
     if not proj_path.exists():
         return "path non trovato", 404
-    # Security check: must be inside WORKSPACE
     try:
         proj_path.resolve().relative_to(WORKSPACE.resolve())
     except ValueError:
         return "path non autorizzato", 403
-
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for f in proj_path.rglob("*"):
             if f.is_file():
                 zf.write(f, f.relative_to(proj_path.parent))
     buf.seek(0)
-    zip_name = proj_path.name + ".zip"
     from flask import send_file
     return send_file(buf, mimetype="application/zip",
-                     as_attachment=True, download_name=zip_name)
+                     as_attachment=True, download_name=proj_path.name + ".zip")
 
-@app.route("/file_content")
-def file_content():
-    """Restituisce il contenuto testuale di un file nel workspace."""
-    path_str = request.args.get("path", "").strip()
-    if not path_str:
-        return jsonify({"error": "path mancante"}), 400
-    file_path = Path(path_str)
-    # Security: must be inside WORKSPACE
-    try:
-        file_path.resolve().relative_to(WORKSPACE.resolve())
-    except ValueError:
-        return jsonify({"error": "path non autorizzato"}), 403
-    if not file_path.exists() or not file_path.is_file():
-        return jsonify({"error": "file non trovato"}), 404
-    try:
-        content = file_path.read_text(encoding="utf-8")
-        return jsonify({"content": content, "filename": file_path.name})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+@app.route("/memory/append", methods=["POST"])
+def memory_append():
+    """Aggiunge un suggerimento approvato a MEMORY.md."""
+    data    = request.json or {}
+    section = (data.get("section") or "").strip()
+    text    = (data.get("text") or "").strip()
+    if not section or not text:
+        return jsonify({"error": "section e text obbligatori"}), 400
+    ok = append_to_memory(section, text)
+    if ok:
+        return jsonify({"ok": True, "path": str(MEMORY_PATH.resolve())})
+    return jsonify({"error": "impossibile scrivere MEMORY.md"}), 500
+
+@app.route("/memory", methods=["GET"])
+def memory_get():
+    """Ritorna il contenuto attuale di MEMORY.md."""
+    if not MEMORY_PATH.exists():
+        return jsonify({"content": ""})
+    return jsonify({"content": MEMORY_PATH.read_text(encoding="utf-8")})
 
 @app.route("/models")
-def models():
+def models_route():
     return jsonify(MODELS)
 
 if __name__ == "__main__":

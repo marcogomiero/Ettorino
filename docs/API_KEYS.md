@@ -1,7 +1,7 @@
 # 🔑 Getting your API Keys
 
-Ettorino needs two API keys: one from **Anthropic** (for Claude) and one from **OpenAI** (for GPT/o3).
-Both work on a pay-per-use basis — you only pay for what you use, no subscription required.
+Ettorino needs three API keys: one from **Anthropic** (for Claude), one from **OpenAI** (for GPT/o3), and one from **Google** (for Gemini — optional but recommended).
+All work on a pay-per-use basis — you only pay for what you use, no subscription required.
 
 ---
 
@@ -21,6 +21,7 @@ Both work on a pay-per-use basis — you only pay for what you use, no subscript
 4. **Copy the key immediately** — it's only shown once!
 
 The key looks like this:
+
 ```
 sk-ant-api03-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 ```
@@ -28,7 +29,7 @@ sk-ant-api03-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 ### Credits and billing
 
 | Situation | What happens |
-|---|---|
+| --- | --- |
 | New account | ~$5 in free credits to get started |
 | Credits exhausted | Add more manually |
 | No subscription | You only pay for the API calls you make |
@@ -37,12 +38,12 @@ To top up: **Console → Billing → Add Credits** (minimum $5)
 
 ### Anthropic model pricing (May 2026)
 
-| Model | Input $/1M tok | Output $/1M tok |
-|---|---|---|
-| Claude Haiku 4.5 | $1.00 | $5.00 |
-| Claude Sonnet 4.6 | $3.00 | $15.00 |
-| Claude Opus 4.6 | $5.00 | $25.00 |
-| Claude Opus 4.7 | $5.00 | $25.00 |
+| Model | Role | Input $/1M tok | Output $/1M tok |
+| --- | --- | --- | --- |
+| Claude Haiku 4.5 | Reasoner / Implementer | $1.00 | $5.00 |
+| Claude Sonnet 4.6 | Reasoner / Implementer | $3.00 | $15.00 |
+| Claude Opus 4.6 | Reasoner / Implementer | $5.00 | $25.00 |
+| Claude Opus 4.7 | Reasoner / Implementer | $5.00 | $25.00 |
 
 > **Note:** The Claude Max plan ($100/month) is for the claude.ai web interface only — it does **not** include API credits. They are separate billing systems.
 
@@ -73,6 +74,7 @@ Unlike Anthropic, OpenAI **does not offer automatic free credits** to new accoun
 4. **Copy the key immediately** — it's only shown once!
 
 The key looks like this:
+
 ```
 sk-proj-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 ```
@@ -80,7 +82,7 @@ sk-proj-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 ### OpenAI model pricing (May 2026)
 
 | Model | Input $/1M tok | Output $/1M tok |
-|---|---|---|
+| --- | --- | --- |
 | GPT-4.1 mini | $0.40 | $1.60 |
 | GPT-4.1 | $2.00 | $8.00 |
 | o3 | $15.00 | $60.00 |
@@ -89,41 +91,109 @@ sk-proj-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 
 ---
 
-## 3. Adding your keys to Ettorino
+## 3. Google API Key (Gemini) — opzionale
 
-Open the `.env` file in the Ettorino folder and replace the placeholders:
+Gemini è l'implementer più economico disponibile in Ettorino. I modelli Flash hanno un **free tier** senza carta di credito, utile per testare o per task semplici.
+
+### Sign up e chiave API (gratis, nessuna carta)
+
+1. Vai su [aistudio.google.com](https://aistudio.google.com)
+2. Accedi con il tuo account Google
+3. Menu a sinistra → **"Get API key"**
+4. Clicca **"Create API key"** → seleziona o crea un progetto
+5. **Copia la chiave** — la puoi sempre recuperare da questa pagina
+
+La chiave looks like this:
+
+```
+AIzaSy-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+```
+
+### Free tier — cosa ottieni senza carta
+
+| Modello | RPM | RPD | Note |
+| --- | --- | --- | --- |
+| Gemini 2.5 Flash-Lite | 15 | 1.000 | Più economico assoluto |
+| Gemini 2.5 Flash | 10 | 500 | Ottimo per codice |
+
+> I limiti free tier si sono ridotti da fine 2025. Sono sufficienti per prototipazione e uso personale leggero, ma non per uso intensivo.
+
+> ⚠️ **Attenzione privacy:** Con il free tier, Google può usare i tuoi input/output per migliorare i propri modelli. Se il codice che generi è confidenziale, attiva il billing paid.
+
+### Caricare crediti (quando esaurisci il free tier)
+
+1. Vai su [aistudio.google.com](https://aistudio.google.com) → menu → **"Billing"**
+2. Clicca **"Set up billing"**
+3. Crea o collega un **Google Cloud Billing account**
+4. Aggiungi la tua carta di credito/debito
+5. Seleziona **Prepay** (obbligatorio per nuovi account da marzo 2026)
+6. Acquista i crediti — **minimo $10, massimo $5.000**
+7. I crediti vengono scalati in tempo reale durante l'uso
+
+**Auto-reload (consigliato):** nelle impostazioni Billing puoi configurare una soglia automatica — es. "quando scendo sotto $5, ricarica $20" — così non ti blocchi a metà di un task.
+
+> ⚠️ I crediti Google scadono dopo **12 mesi** dall'acquisto e non sono rimborsabili. Non caricare più di quanto prevedi di spendere nell'anno.
+
+> ⚠️ I $300 di Google Cloud welcome credit **non coprono** la Gemini API — sono riservati ad altri servizi Google Cloud.
+
+### Spending cap (protezione sorprese)
+
+Dal pannello Billing → Projects puoi impostare un cap mensile per progetto. Raccomandato: impostalo subito dopo aver attivato il billing.
+
+### Google Gemini model pricing (May 2026)
+
+| Modello | Free tier | Input $/1M tok | Output $/1M tok | Contesto |
+| --- | --- | --- | --- | --- |
+| Gemini 2.5 Flash-Lite | ✓ | $0.10 | $0.40 | 1M tok |
+| Gemini 2.5 Flash | ✓ | $0.30 | $2.50 | 1M tok |
+| Gemini 2.5 Pro | ✗ | $1.25 | $10.00 | 1M tok |
+| Gemini 3 Flash | ✗ | $0.50 | $3.00 | 1M tok |
+| Gemini 3.1 Flash-Lite | ✗ | $0.25 | $1.50 | 1M tok |
+| Gemini 3.1 Pro | ✗ | $2.00 | $12.00 | 1M tok |
+
+> Tutti i modelli Gemini hanno una finestra di contesto da **1 milione di token** — utile per codebase grandi o task con molto codice di contesto.
+
+---
+
+## 4. Aggiungere le chiavi a Ettorino
+
+Apri il file `.env` nella cartella di Ettorino e sostituisci i placeholder:
 
 ```env
 ANTHROPIC_API_KEY=sk-ant-api03-XXXXXXXX...
 OPENAI_API_KEY=sk-proj-XXXXXXXX...
+GOOGLE_API_KEY=AIzaSy-XXXXXXXX...   # opzionale — rimuovi la riga se non la usi
 ```
 
-Save the file. The next time you start `ettorino_assistant.py`, the keys are loaded automatically.
+Salva il file. La prossima volta che avvii `ettorino.py`, le chiavi vengono caricate automaticamente. Se `GOOGLE_API_KEY` non è presente, Ettorino fa fallback automatico a GPT senza crashare.
 
 ---
 
-## 4. Security — the basics
+## 5. Sicurezza — le basi
 
-> ⚠️ API keys are like passwords. If someone gets them, they can spend your credits.
+> ⚠️ Le chiavi API sono come password. Se qualcuno le ottiene, può spendere i tuoi crediti.
 
-- **Never commit `.env` to git** (the included `.gitignore` excludes it automatically)
-- **Never share your keys** in chat, email, or screenshots
-- **Never hardcode them** — always use the `.env` file
-- If you think a key has been compromised, **disable it immediately** from the console and create a new one
-- Set a **monthly spending limit** as a safeguard:
+- **Non committare mai `.env` su git** (il `.gitignore` incluso lo esclude automaticamente)
+- **Non condividere le chiavi** in chat, email o screenshot
+- **Non metterle nel codice** — usa sempre il file `.env`
+- Se pensi che una chiave sia compromessa, **disabilitala subito** dalla console e creane una nuova
+- Imposta un **spending limit mensile** come precauzione:
   - Anthropic: Console → Billing → Usage limits
   - OpenAI: Platform → Billing → Usage limits
+  - Google: AI Studio → Billing → Projects → Spend cap
 
 ---
 
-## 5. How much will I spend testing?
+## 6. Quanto spendo per testare?
 
-With $5 on each platform you can do a lot:
+Con $5 su Anthropic + $5 su OpenAI puoi fare moltissimo. Gemini Flash aggiunge capacità gratis:
 
-| Scenario | Estimated cost |
-|---|---|
-| 50 easy tasks (Haiku + GPT-4.1 mini) | ~$0.10 total |
-| 20 medium tasks (Sonnet + GPT-4.1) | ~$1.00 total |
-| 5 hard tasks (Opus + o3) | ~$2.00 total |
+| Scenario | Modelli | Costo stimato |
+| --- | --- | --- |
+| 50 task easy | Haiku + Gemini 2.5 Flash-Lite | **~$0.02** (quasi gratis) |
+| 50 task easy | Haiku + GPT-4.1 mini | ~$0.10 |
+| 20 task medium | Sonnet + Gemini 2.5 Flash | ~$0.30 |
+| 20 task medium | Sonnet + GPT-4.1 | ~$1.00 |
+| 5 task hard | Opus + o3 | ~$2.00 |
 
-Ettorino's **live cost panel** shows you exactly what each call costs in real time — no surprises.
+Ettorino mostra il **costo live per ogni chiamata** — Claude quanto, GPT quanto, Gemini quanto — così non ci sono sorprese.

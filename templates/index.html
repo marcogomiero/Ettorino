@@ -13,6 +13,8 @@
       --red-pale:  rgba(194,27,23,.07);
       --green:     #1a7f37;
       --green-bg:  rgba(26,127,55,.07);
+      --blue:      #1d4ed8;
+      --blue-bg:   rgba(29,78,216,.07);
       --gray:      #888;
       --border:    #e0e0e0;
       --bg:        #ffffff;
@@ -29,6 +31,7 @@
       --gray:      #666;
       --red-pale:  rgba(194,27,23,.12);
       --green-bg:  rgba(26,127,55,.12);
+      --blue-bg:   rgba(29,78,216,.12);
     }
     [data-theme="dark"] .topbar{background:rgba(14,14,14,.97)}
     [data-theme="dark"] .ex-modal,[data-theme="dark"] .code-modal,[data-theme="dark"] .confirm-card,
@@ -73,8 +76,9 @@
     .tb-cell{display:flex;align-items:center;gap:8px;font-size:.72rem;color:var(--gray);padding:0 14px 0 0}
     .tb-cell:not(:last-child){border-right:1px solid var(--border);margin-right:14px}
     .tb-label{font-weight:700;letter-spacing:.04em}
-    .tb-label.claude{color:var(--red)}
-    .tb-label.gpt{color:var(--green)}
+    .tb-label.claude {color:var(--red)}
+    .tb-label.gpt    {color:var(--green)}
+    .tb-label.google {color:var(--blue)}
     .tb-val{color:var(--text);font-weight:600}
     .tb-tok{color:var(--gray);font-weight:400}
     .tb-total{margin-left:auto;font-size:.72rem;font-weight:700;color:var(--text)}
@@ -176,20 +180,22 @@
     .log-row.show{opacity:1;transform:translateY(0)}
 
     /* accent lines */
-    .log-row.lc-claude{border-left-color:var(--red)}
-    .log-row.lc-gpt   {border-left-color:var(--green)}
-    .log-row.lc-router{border-left-color:#e08800}
-    .log-row.lc-system{border-left-color:var(--border)}
-    .log-row.lc-user  {border-left-color:#333}
+    .log-row.lc-claude {border-left-color:var(--red)}
+    .log-row.lc-gpt    {border-left-color:var(--green)}
+    .log-row.lc-google {border-left-color:var(--blue)}
+    .log-row.lc-router {border-left-color:#e08800}
+    .log-row.lc-system {border-left-color:var(--border)}
+    .log-row.lc-user   {border-left-color:#333}
 
     .log-label{
       flex-shrink:0;font-weight:700;margin-right:.5em;white-space:nowrap;
     }
-    .log-label.lbl-claude{color:var(--red)}
-    .log-label.lbl-gpt   {color:var(--green)}
-    .log-label.lbl-router{color:#b86c00}
-    .log-label.lbl-system{color:var(--gray)}
-    .log-label.lbl-user  {color:#333}
+    .log-label.lbl-claude {color:var(--red)}
+    .log-label.lbl-gpt    {color:var(--green)}
+    .log-label.lbl-google {color:var(--blue)}
+    .log-label.lbl-router {color:#b86c00}
+    .log-label.lbl-system {color:var(--gray)}
+    .log-label.lbl-user   {color:#333}
 
     .log-ts{
       font-size:.65rem;color:#bbb;flex-shrink:0;margin-left:.5em;align-self:flex-start;margin-top:.15em;
@@ -228,12 +234,19 @@
     .cp-bar.indeterminate{width:35%;animation:ind 1.5s ease-in-out infinite}
     .cp-label{font-size:.65rem;color:var(--gray);display:flex;justify-content:space-between}
 
-    /* ─── GPT progress (inline) ─── */
+    /* ─── GPT progress (inline) — verde ─── */
     .gpt-progress{margin-top:5px}
     .gp-bar-wrap{height:2px;background:var(--green-bg);margin-bottom:4px}
     .gp-bar{height:100%;background:var(--green);width:35%;animation:ind 1.2s ease-in-out infinite}
     .gp-bar.done{animation:none;width:100%}
     .gp-label{font-size:.65rem;color:var(--gray);display:flex;justify-content:space-between}
+
+    /* ─── Google Gemini progress (inline) — blu ─── */
+    .google-progress{margin-top:5px}
+    .gg-bar-wrap{height:2px;background:var(--blue-bg);margin-bottom:4px}
+    .gg-bar{height:100%;background:var(--blue);width:35%;animation:ind 1.2s ease-in-out infinite}
+    .gg-bar.done{animation:none;width:100%}
+    .gg-label{font-size:.65rem;color:var(--blue);display:flex;justify-content:space-between}
 
     @keyframes ind{
       0%{transform:translateX(-100%);width:35%}
@@ -248,6 +261,15 @@
       border:1px solid rgba(26,127,55,.25);padding:2px 8px;cursor:pointer;
     }
     .gpt-download:hover{background:rgba(26,127,55,.14)}
+
+    /* download link per Gemini — blu */
+    .google-download{
+      display:inline-flex;align-items:center;gap:5px;
+      margin-top:4px;font-size:.7rem;color:var(--blue);
+      text-decoration:none;background:var(--blue-bg);
+      border:1px solid rgba(29,78,216,.25);padding:2px 8px;cursor:pointer;
+    }
+    .google-download:hover{background:rgba(29,78,216,.14)}
 
     /* ─── CONFIRM CARD ─── */
     .confirm-card{
@@ -265,9 +287,9 @@
     .cc-key{color:var(--gray)}
     .cc-val{font-weight:700;color:var(--text)}
     .diff-tag{padding:1px 8px;font-size:.65rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;border:1px solid}
-    .diff-tag.easy  {color:#1a7f37;border-color:#1a7f37;background:var(--green-bg)}
-    .diff-tag.medium{color:#b86c00;border-color:#e08800;background:rgba(224,136,0,.07)}
-    .diff-tag.hard  {color:var(--red);border-color:var(--red);background:var(--red-pale)}
+    .diff-tag.easy    {color:#1a7f37;border-color:#1a7f37;background:var(--green-bg)}
+    .diff-tag.medium  {color:#b86c00;border-color:#e08800;background:rgba(224,136,0,.07)}
+    .diff-tag.hard    {color:var(--red);border-color:var(--red);background:var(--red-pale)}
     .diff-tag.hard-mid{color:#b86c00;border-color:#e08800;background:rgba(224,136,0,.07)}
     .rationale{
       font-size:.76rem;color:var(--gray);line-height:1.5;
@@ -422,12 +444,16 @@
       border-top:2px solid var(--green);
       background:var(--bg);padding:.8rem 1rem;
     }
+    /* Quando i worker sono Gemini, il bordo superiore diventa blu */
+    .parallel-dash.provider-google{border-top-color:var(--blue)}
     .pd-header{
       font-size:.68rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
       color:var(--green);margin-bottom:.7rem;
       display:flex;align-items:center;gap:6px;
     }
+    .parallel-dash.provider-google .pd-header{color:var(--blue)}
     .pd-spark{width:6px;height:6px;border-radius:50%;background:var(--green);animation:pulse .8s infinite;flex-shrink:0}
+    .parallel-dash.provider-google .pd-spark{background:var(--blue)}
     .pd-workers{display:flex;gap:10px}
     .worker-card{
       flex:1;border:1px solid var(--border);border-top:2px solid #ccc;
@@ -437,6 +463,9 @@
     .worker-card.done   {border-top-color:var(--green);background:rgba(26,127,55,.04)}
     .worker-card.error  {border-top-color:var(--red);background:var(--red-pale)}
     .worker-card.waiting{opacity:.6}
+    /* Worker Gemini: blu invece di verde */
+    .worker-card.google-worker.running{border-top-color:var(--blue)}
+    .worker-card.google-worker.done   {border-top-color:var(--blue);background:rgba(29,78,216,.04)}
     .worker-id{font-size:.6rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--gray);margin-bottom:2px}
     .worker-title{font-size:.76rem;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:.35rem}
     .worker-status{font-size:.66rem;display:flex;align-items:center;gap:4px}
@@ -445,14 +474,21 @@
     .worker-dot.running{background:var(--green);animation:pulse .8s infinite}
     .worker-dot.done   {background:var(--green)}
     .worker-dot.error  {background:var(--red)}
+    /* Dot Gemini blu */
+    .google-worker .worker-dot.running{background:var(--blue)}
+    .google-worker .worker-dot.done   {background:var(--blue)}
     .worker-bar-wrap{height:2px;background:var(--bg2);margin-top:.45rem;overflow:hidden}
     .worker-bar{height:100%;width:0%;transition:width .4s}
     .worker-bar.running{background:var(--green);animation:ind 1.3s ease-in-out infinite}
     .worker-bar.done   {background:var(--green);width:100%!important;animation:none}
     .worker-bar.error  {background:var(--red);width:100%!important;animation:none}
+    /* Bar Gemini blu */
+    .google-worker .worker-bar.running{background:var(--blue)}
+    .google-worker .worker-bar.done   {background:var(--blue)}
     .worker-lines{font-size:.62rem;color:var(--gray);margin-top:2px}
     .worker-stream-bar-wrap{height:2px;background:var(--bg2);border-radius:999px;margin-top:.4rem;overflow:hidden}
     .worker-stream-bar{height:100%;border-radius:999px;width:0%;background:var(--green);transition:width .3s ease}
+    .google-worker .worker-stream-bar{background:var(--blue)}
     .worker-stream-bar.running{animation:ind 1.4s ease-in-out infinite}
     .worker-stream-bar.done{width:100%!important;animation:none}
     .worker-tok{font-size:.6rem;color:var(--gray);font-family:var(--mono);margin-top:2px;display:flex;justify-content:space-between}
@@ -467,10 +503,16 @@
     }
     .file-chip:hover{background:rgba(26,127,55,.14);transform:translateY(-1px)}
     .file-chip:active{transform:scale(.97)}
+    /* chip Gemini — blu */
+    .file-chip.google-chip{
+      background:var(--blue-bg);border-color:rgba(29,78,216,.25);color:var(--blue);
+    }
+    .file-chip.google-chip:hover{background:rgba(29,78,216,.14)}
     .chip-ext{
       font-size:.58rem;background:var(--green);color:#fff;
       padding:1px 4px;letter-spacing:.04em;
     }
+    .google-chip .chip-ext{background:var(--blue)}
     .file-chip-dl{background:var(--red-pale);border-color:rgba(194,27,23,.25);color:var(--red)}
     .file-chip-dl:hover{background:rgba(194,27,23,.12)}
     .file-chip-dl .chip-ext{background:var(--red)}
@@ -552,6 +594,47 @@
       font-size:.68rem;font-weight:700;color:#b86c00;
     }
     .align-warn::before{content:'⚠ '}
+
+    /* ─── REFLECT CARD (suggerimenti memoria) ─── */
+    .reflect-card{
+      margin-top:6px;padding:.8rem 1rem;
+      border:1px solid var(--border);border-top:2px solid var(--blue);
+      background:var(--bg);
+    }
+    .reflect-title{
+      font-size:.68rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
+      color:var(--blue);margin-bottom:.6rem;
+      display:flex;align-items:center;gap:6px;
+    }
+    .reflect-title::before{content:'💡 '}
+    .reflect-item{
+      display:flex;align-items:flex-start;gap:8px;
+      padding:.45rem 0;border-bottom:1px solid var(--border);
+      font-size:.82rem;line-height:1.5;
+    }
+    .reflect-item:last-child{border-bottom:none}
+    .reflect-section{
+      font-size:.58rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+      color:var(--blue);white-space:nowrap;padding-top:2px;min-width:80px;
+    }
+    .reflect-text{flex:1;color:var(--text)}
+    .reflect-btn-ok{
+      flex-shrink:0;background:var(--blue);color:#fff;border:none;
+      padding:3px 11px;font-family:var(--mono);font-size:.7rem;font-weight:700;
+      cursor:pointer;transition:background .12s;white-space:nowrap;
+    }
+    .reflect-btn-ok:hover{background:#1e40af}
+    .reflect-btn-ok:disabled{background:#ccc;cursor:default}
+    .reflect-btn-skip{
+      flex-shrink:0;background:transparent;color:var(--gray);
+      border:1px solid var(--border);
+      padding:3px 9px;font-family:var(--mono);font-size:.7rem;font-weight:500;
+      cursor:pointer;transition:all .12s;white-space:nowrap;
+    }
+    .reflect-btn-skip:hover{border-color:var(--text);color:var(--text)}
+    .reflect-done{
+      font-size:.72rem;color:var(--blue);font-style:italic;margin-top:.4rem;
+    }
   </style>
 </head>
 <body>
@@ -596,6 +679,11 @@
       <span class="tb-label gpt">GPT</span>
       <span class="tb-val" id="gptCost">$0.0000</span>
       <span class="tb-tok" id="gptTok">0 tok</span>
+    </div>
+    <div class="tb-cell" id="googleCostCell" style="display:none">
+      <span class="tb-label google">Gemini</span>
+      <span class="tb-val" id="googleCost">$0.0000</span>
+      <span class="tb-tok" id="googleTok">0 tok</span>
     </div>
     <div class="tb-total"><span data-i18n="totalLabel">Total</span>: <span id="totalCost">$0.0000</span></div>
     <div class="tb-timer" id="costTimer" style="display:none">
@@ -677,7 +765,7 @@
 // ── State ──────────────────────────────────
 let sessionId = null;
 let es = null;
-const costs = {anthropic:{cost:0,tokens:0}, openai:{cost:0,tokens:0}, total:0};
+const costs = {anthropic:{cost:0,tokens:0}, openai:{cost:0,tokens:0}, google:{cost:0,tokens:0}, total:0};
 var isParallel = false;
 
 // ── i18n ───────────────────────────────────────
@@ -685,7 +773,7 @@ var LANG = 'en';
 
 var STRINGS = {
   en: {
-    tagline:           'Claude × GPT · difficulty-aware router',
+    tagline:           'Claude × GPT × Gemini · difficulty-aware router',
     cmdLabel:          'Describe the task',
     taskPlaceholder:   'E.g. Build a Python CLI tool that saves notes with timestamps...',
     statusReady:       'ready',
@@ -713,6 +801,7 @@ var STRINGS = {
     exHint:            '// click "Use this" to load the task into the prompt without running it',
     thinking:          'thinking...',
     writing:           'writing code...',
+    geminiWriting:     'Gemini writing code...',
     iterLabel:         'iter',
     of:                '/',
     totalLabel:        'Total',
@@ -725,7 +814,7 @@ var STRINGS = {
     btnChange:         'Change & run',
     answerPlaceholder: 'Your answer...',
     answerBtn:         'Send',
-    parallelHeader:    'GPT workers in parallel',
+    parallelHeader:    'workers in parallel',
     parallelWaiting:   'queued...',
     parallelDone:      'completed',
     parallelFailed:    'failed',
@@ -738,6 +827,7 @@ var STRINGS = {
     workers:           'workers completed',
     claudeThinking:    'thinking...',
     gptCoding:         'writing code...',
+    geminiCoding:      'Gemini writing code...',
     truncated:         '⚠ output truncated — resuming',
     maxTruncated:      '⚠ max continuations reached — output may be incomplete',
     errorPrefix:       '❌',
@@ -745,12 +835,12 @@ var STRINGS = {
     stoppedMsg:        '⛔ Task stopped by user.',
     modelsUpdated:     'Models updated →',
     iterPrefix:        '── Iteration',
-    gptOffTrack:       'GPT off track — Claude corrects',
+    gptOffTrack:       'Implementer off track — Claude corrects',
     corrFeedback:      '🔧 Corrective feedback:',
-    realign:           '🎯 GPT realignment:',
+    realign:           '🎯 Realignment:',
   },
   it: {
-    tagline:           'Claude × GPT · difficulty-aware router',
+    tagline:           'Claude × GPT × Gemini · difficulty-aware router',
     cmdLabel:          'Descrivi il task',
     taskPlaceholder:   'Es: Costruisci un CLI tool Python che salva note con timestamp...',
     statusReady:       'pronto',
@@ -778,6 +868,7 @@ var STRINGS = {
     exHint:            '// clicca "Usa questo" per caricare il task nel prompt senza avviarlo',
     thinking:          'ragionando...',
     writing:           'scrivendo codice...',
+    geminiWriting:     'Gemini scrive codice...',
     iterLabel:         'iter',
     of:                '/',
     totalLabel:        'Totale',
@@ -790,7 +881,7 @@ var STRINGS = {
     btnChange:         'Cambia e avvia',
     answerPlaceholder: 'La tua risposta...',
     answerBtn:         'Invia',
-    parallelHeader:    'worker GPT in parallelo',
+    parallelHeader:    'worker in parallelo',
     parallelWaiting:   'in coda...',
     parallelDone:      'completato',
     parallelFailed:    'fallito',
@@ -803,6 +894,7 @@ var STRINGS = {
     workers:           'worker completati',
     claudeThinking:    'ragionando...',
     gptCoding:         'scrivendo codice...',
+    geminiCoding:      'Gemini scrive codice...',
     truncated:         '⚠ output troncato — continuo',
     maxTruncated:      '⚠ raggiunto limite massimo continuazioni — output potrebbe essere incompleto',
     errorPrefix:       '❌',
@@ -810,9 +902,9 @@ var STRINGS = {
     stoppedMsg:        '⛔ Task interrotto dall\'utente.',
     modelsUpdated:     'Modelli confermati →',
     iterPrefix:        '── Iterazione',
-    gptOffTrack:       'GPT fuori binari — Claude corregge',
+    gptOffTrack:       'Implementer fuori binari — Claude corregge',
     corrFeedback:      '🔧 Feedback correttivo:',
-    realign:           '🎯 Riallineamento GPT:',
+    realign:           '🎯 Riallineamento:',
   }
 };
 
@@ -829,11 +921,6 @@ var EXAMPLES_IT = [
   "Costruisci un sistema di personal finance tracker con: import CSV da banche italiane (Intesa, Unicredit, Fineco) con auto-detection del formato, motore di categorizzazione transazioni con rule matching (regex + keyword scoring), budget mensile con alert, SQLite + migration system, API REST Flask con JWT, CLI con rich tables, generazione PDF report, integrazione bot Telegram per log spese rapido, test suite pytest completa."
 ];
 function getExamples(){ return LANG === 'it' ? EXAMPLES_IT : EXAMPLES_EN; }
-
-var DIFF_LABELS = {
-  en: ['Easy','Medium','Hard'],
-  it: ['Easy','Medium','Hard']
-};
 
 function renderExamples(){
   var examples = getExamples();
@@ -852,36 +939,25 @@ function renderExamples(){
   document.getElementById('exList').innerHTML = html;
 }
 
-
 function applyLang(){
-  // static data-i18n elements
   document.querySelectorAll('[data-i18n]').forEach(function(el){
     var key = el.getAttribute('data-i18n');
     el.textContent = t(key);
   });
-  // placeholder attrs
   document.querySelectorAll('[data-i18n-placeholder]').forEach(function(el){
     el.placeholder = t(el.getAttribute('data-i18n-placeholder'));
   });
-  // lang buttons active state
   document.getElementById('btnLangEN').classList.toggle('active', LANG==='en');
   document.getElementById('btnLangIT').classList.toggle('active', LANG==='it');
-  // html lang attr
   document.documentElement.lang = LANG;
-  // rigenera esempi se il modal è aperto
   if(document.getElementById('exOverlay').classList.contains('open')) renderExamples();
-  // persist
   localStorage.setItem('ettorino_lang', LANG);
 }
 
-function setLang(lang){
-  LANG = lang;
-  applyLang();
-}
+function setLang(lang){ LANG = lang; applyLang(); }
 
 // ── Dark mode ───────────────────────────────────
 var DARK = false;
-
 function toggleDark(){
   DARK = !DARK;
   document.documentElement.setAttribute('data-theme', DARK ? 'dark' : '');
@@ -889,7 +965,7 @@ function toggleDark(){
   localStorage.setItem('ettorino_dark', DARK ? '1' : '');
 }
 
-// ── Init from localStorage ──────────────────────
+// ── Init ──────────────────────────────────────
 (function(){
   var savedLang = localStorage.getItem('ettorino_lang') || 'en';
   var savedDark = localStorage.getItem('ettorino_dark') === '1';
@@ -899,35 +975,14 @@ function toggleDark(){
 })();
 
 // ── Examples ──────────────────────────────────
-
-
-function openExamples(){
-  renderExamples();
-  document.getElementById('exOverlay').classList.add('open');
-  document.body.style.overflow='hidden';
-}
-
-
-function closeExamples(){
-  document.getElementById('exOverlay').classList.remove('open');
-  document.body.style.overflow='';
-}
-function closeExamplesOutside(e){
-  if(e.target===document.getElementById('exOverlay')) closeExamples();
-}
-function useExample(idx){
-  document.getElementById('taskInput').value = getExamples()[idx];
-  closeExamples();
-  document.getElementById('taskInput').focus();
-}
-document.addEventListener('keydown',function(e){
-  if(e.key==='Escape') closeExamples();
-});
+function openExamples(){ renderExamples(); document.getElementById('exOverlay').classList.add('open'); document.body.style.overflow='hidden'; }
+function closeExamples(){ document.getElementById('exOverlay').classList.remove('open'); document.body.style.overflow=''; }
+function closeExamplesOutside(e){ if(e.target===document.getElementById('exOverlay')) closeExamples(); }
+function useExample(idx){ document.getElementById('taskInput').value = getExamples()[idx]; closeExamples(); document.getElementById('taskInput').focus(); }
+document.addEventListener('keydown',function(e){ if(e.key==='Escape'){ closeExamples(); closeCodeModalDirect(); } });
 
 // ── Timer ──────────────────────────────────
-var timerStart = null;
-var timerInterval = null;
-
+var timerStart = null, timerInterval = null;
 function startTimer(){
   timerStart = Date.now();
   document.getElementById('costTimer').style.display = 'flex';
@@ -935,17 +990,16 @@ function startTimer(){
   clearInterval(timerInterval);
   timerInterval = setInterval(function(){
     var e = Math.floor((Date.now()-timerStart)/1000);
-    var m = Math.floor(e/60), s = e%60;
-    document.getElementById('timerVal').textContent = m+':'+String(s).padStart(2,'0');
+    document.getElementById('timerVal').textContent = Math.floor(e/60)+':'+String(e%60).padStart(2,'0');
   },500);
 }
 function stopTimer(success){
   clearInterval(timerInterval); timerInterval=null;
   var dot = document.getElementById('timerDot');
-  if(dot){ dot.className='tdot'+(success?' done':''); }
+  if(dot) dot.className='tdot'+(success?' done':'');
   if(timerStart){
-    var e=Math.floor((Date.now()-timerStart)/1000), m=Math.floor(e/60), s=e%60;
-    document.getElementById('timerVal').textContent=m+':'+String(s).padStart(2,'0');
+    var e=Math.floor((Date.now()-timerStart)/1000);
+    document.getElementById('timerVal').textContent=Math.floor(e/60)+':'+String(e%60).padStart(2,'0');
   }
 }
 function resetTimer(){
@@ -966,20 +1020,30 @@ function updateCostBar(){
   document.getElementById('claudeTok').textContent=fmtTok(costs.anthropic.tokens);
   document.getElementById('gptCost').textContent=fmt(costs.openai.cost);
   document.getElementById('gptTok').textContent=fmtTok(costs.openai.tokens);
+  // Gemini cell: mostra solo se ha costi
+  if(costs.google.cost > 0 || costs.google.tokens > 0){
+    document.getElementById('googleCostCell').style.display='flex';
+    document.getElementById('googleCost').textContent=fmt(costs.google.cost);
+    document.getElementById('googleTok').textContent=fmtTok(costs.google.tokens);
+  }
   document.getElementById('totalCost').textContent=fmt(costs.total).replace('$','');
 }
-
 function nowTs(){
   var d=new Date();
   return '['+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')+':'+String(d.getSeconds()).padStart(2,'0')+']';
 }
-
-function scrollFeed(){ window.scrollTo({top:document.body.scrollHeight,behavior:'smooth'}); }
+var _scrollTimeout=null;
+function scrollFeed(){
+  if(_scrollTimeout) return;
+  _scrollTimeout=setTimeout(function(){ window.scrollTo({top:document.body.scrollHeight,behavior:'smooth'}); _scrollTimeout=null; },100);
+}
 
 // ── Log row builder ────────────────────────
+// google usa la stessa chiave 'google' — colore blu
 var AGENT_META = {
   claude: {label:'Claude:',  cls:'claude'},
   gpt:    {label:'GPT:',     cls:'gpt'},
+  google: {label:'Gemini:',  cls:'google'},   // ← BLU
   router: {label:'Router:',  cls:'router'},
   system: {label:'Sistema:', cls:'system'},
   user:   {label:'Utente:',  cls:'user'},
@@ -990,21 +1054,15 @@ function createLogRow(agentKey){
   var m = AGENT_META[agentKey] || {label:agentKey+':', cls:'system'};
   var row = document.createElement('div');
   row.className = 'log-row lc-'+m.cls;
-
   var lbl = document.createElement('span');
   lbl.className = 'log-label lbl-'+m.cls;
   lbl.textContent = m.label;
-
   var body = document.createElement('span');
   body.className = 'log-body';
-
   var ts = document.createElement('span');
   ts.className = 'log-ts';
   ts.textContent = nowTs();
-
-  row.appendChild(lbl);
-  row.appendChild(body);
-  row.appendChild(ts);
+  row.appendChild(lbl); row.appendChild(body); row.appendChild(ts);
   document.getElementById('messages').appendChild(row);
   requestAnimationFrame(()=>row.classList.add('show'));
   return {row, body};
@@ -1017,34 +1075,26 @@ function addSimpleMsg(agentKey, html){
 }
 
 // ── Streaming row ──────────────────────────
-var currentStreamBody = null;
-var currentStreamText = '';
-var currentStreamAgent = null;
-var currentStreamTokens = 0;
-var currentProgressEl = null;
-var currentProgressBar = null;
-var currentProgressLabel = null;
-var currentGptChipsEl = null;
-var pendingChipsEl = null;
-var lastSavedPath = null;
-var lastSavedFiles = [];
-var codeStore = {};
+var currentStreamBody=null, currentStreamText='', currentStreamAgent=null;
+var currentStreamTokens=0, currentProgressEl=null, currentProgressBar=null;
+var currentProgressLabel=null, currentGptChipsEl=null, pendingChipsEl=null;
+var lastSavedPath=null, lastSavedFiles=[], codeStore={};
 
 function escHtml(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 function renderText(raw){
-  var t = raw.replace(/\\n/g,'\n').replace(/\\t/g,'  ').replace(/\\"/g,'"');
-  t = t.replace(/```[\w]*\n([\s\S]*?)```/g,function(_,code){return '<pre>'+escHtml(code.trimRight())+'</pre>';});
-  t = t.replace(/`([^`\n]{1,200})`/g,'<code>$1</code>');
-  t = t.replace(/\*\*([^*\n]{1,200})\*\*/g,'<strong>$1</strong>');
-  t = t.replace(/\n/g,'<br>');
+  var t=raw.replace(/\\n/g,'\n').replace(/\\t/g,'  ').replace(/\\"/g,'"');
+  t=t.replace(/```[\w]*\n([\s\S]*?)```/g,function(_,code){return '<pre>'+escHtml(code.trimRight())+'</pre>';});
+  t=t.replace(/`([^`\n]{1,200})`/g,'<code>$1</code>');
+  t=t.replace(/\*\*([^*\n]{1,200})\*\*/g,'<strong>$1</strong>');
+  t=t.replace(/\n/g,'<br>');
   return t;
 }
 
 function extractThoughts(raw){
-  var m = raw.match(/"thoughts"\s*:\s*"((?:[^"\\]|\\.)*)"/);;
-  if(m && m[1].length>8) return m[1].replace(/\\n/g,'\n').replace(/\\"/g,'"');
-  var pm = raw.match(/"thoughts"\s*:\s*"((?:[^"\\]|\\.){10,})/);
+  var m=raw.match(/"thoughts"\s*:\s*"((?:[^"\\]|\\.)*)"/);;
+  if(m&&m[1].length>8) return m[1].replace(/\\n/g,'\n').replace(/\\"/g,'"');
+  var pm=raw.match(/"thoughts"\s*:\s*"((?:[^"\\]|\\.){10,})/);
   if(pm) return pm[1].replace(/\\n/g,'\n').replace(/\\"/g,'"');
   return null;
 }
@@ -1053,29 +1103,27 @@ function startStreamBubble(agentKey, modelLabel){
   var {row, body} = createLogRow(agentKey);
   body.innerHTML = '<div class="typing"><span></span><span></span><span></span></div>';
   if(modelLabel){
-    var ml = document.createElement('span');
+    var ml=document.createElement('span');
     ml.style.cssText='font-size:.65rem;color:#bbb;display:block;margin-bottom:2px';
-    ml.textContent = modelLabel;
+    ml.textContent=modelLabel;
     body.insertBefore(ml, body.firstChild);
   }
-  currentStreamBody = body;
-  currentStreamText = '';
-  currentStreamAgent = agentKey;
-  currentStreamTokens = 0;
-  currentProgressEl = null; currentProgressBar = null; currentProgressLabel = null;
+  currentStreamBody=body; currentStreamText=''; currentStreamAgent=agentKey;
+  currentStreamTokens=0; currentProgressEl=null; currentProgressBar=null;
+  currentProgressLabel=null;
 
-  if(agentKey === 'claude'){
-    var prog = document.createElement('div'); prog.className='claude-progress';
-    var bw = document.createElement('div'); bw.className='cp-bar-wrap';
-    var b = document.createElement('div'); b.className='cp-bar indeterminate'; bw.appendChild(b);
-    var lbl = document.createElement('div'); lbl.className='cp-label';
+  if(agentKey==='claude'){
+    var prog=document.createElement('div'); prog.className='claude-progress';
+    var bw=document.createElement('div'); bw.className='cp-bar-wrap';
+    var b=document.createElement('div'); b.className='cp-bar indeterminate'; bw.appendChild(b);
+    var lbl=document.createElement('div'); lbl.className='cp-label';
     lbl.innerHTML='<span>'+t('claudeThinking')+'</span><span id="tok-count">0 tok</span>';
     prog.appendChild(bw); prog.appendChild(lbl);
-    // Insert OUTSIDE body so body.innerHTML rewrites don't destroy the bar
     body.parentNode.insertBefore(prog, body.nextSibling);
     currentProgressEl=prog; currentProgressBar=b; currentProgressLabel=lbl.querySelector('#tok-count');
   }
-  if(agentKey === 'gpt'){
+  // GPT — verde
+  if(agentKey==='gpt'){
     body.style.display='none';
     var gprog=document.createElement('div'); gprog.className='gpt-progress';
     var gbw=document.createElement('div'); gbw.className='gp-bar-wrap';
@@ -1089,32 +1137,44 @@ function startStreamBubble(agentKey, modelLabel){
     currentProgressLabel=glbl.querySelector('#gpt-tok-count');
     currentGptChipsEl=gchips;
   }
+  // Google Gemini — BLU
+  if(agentKey==='google'){
+    body.style.display='none';
+    var ggprog=document.createElement('div'); ggprog.className='google-progress';
+    var ggbw=document.createElement('div'); ggbw.className='gg-bar-wrap';
+    var ggb=document.createElement('div'); ggb.className='gg-bar'; ggbw.appendChild(ggb);
+    var gglbl=document.createElement('div'); gglbl.className='gg-label';
+    gglbl.innerHTML='<span>'+t('geminiCoding')+'</span><span id="google-tok-count">0 tok · 0 righe</span>';
+    var ggchips=document.createElement('div'); ggchips.className='gpt-files-wrap'; ggchips.id='google-chips-'+Date.now();
+    ggprog.appendChild(ggbw); ggprog.appendChild(gglbl); ggprog.appendChild(ggchips);
+    body.parentNode.insertBefore(ggprog, body.nextSibling);
+    currentProgressEl=ggprog; currentProgressBar=ggb;
+    currentProgressLabel=gglbl.querySelector('#google-tok-count');
+    currentGptChipsEl=ggchips;
+  }
   return body;
 }
 
 function appendStream(text){
   if(!currentStreamBody) return;
-  currentStreamText += text;
-  currentStreamTokens = Math.round(currentStreamText.length/4);
+  currentStreamText+=text;
+  currentStreamTokens=Math.round(currentStreamText.length/4);
   var html;
   if(currentStreamAgent==='claude'){
     if(currentProgressLabel) currentProgressLabel.textContent=currentStreamTokens+' tok';
     var thoughts=extractThoughts(currentStreamText);
-    if(thoughts && thoughts.length>10){
+    if(thoughts&&thoughts.length>10){
       html=renderText(thoughts);
-      if(currentProgressBar){
-        currentProgressBar.classList.remove('indeterminate');
-        currentProgressBar.style.width=Math.min(95,Math.round(thoughts.length/8))+'%';
-      }
+      if(currentProgressBar){ currentProgressBar.classList.remove('indeterminate'); currentProgressBar.style.width=Math.min(95,Math.round(thoughts.length/8))+'%'; }
     } else { html=null; }
-  } else if(currentStreamAgent==='gpt'){
+  } else if(currentStreamAgent==='gpt'||currentStreamAgent==='google'){
     if(currentProgressLabel){
       var lines=(currentStreamText.match(/\n/g)||[]).length;
       currentProgressLabel.textContent=currentStreamTokens+' tok · '+lines+' righe';
     }
     html=null;
   } else { html=renderText(currentStreamText); }
-  if(currentStreamAgent!=='gpt')
+  if(currentStreamAgent!=='gpt'&&currentStreamAgent!=='google')
     currentStreamBody.innerHTML=html||'<div class="typing"><span></span><span></span><span></span></div>';
   scrollFeed();
 }
@@ -1125,19 +1185,14 @@ function endStream(){
     currentProgressBar.classList.add('done');
     currentProgressBar.style.width='100%';
     currentProgressBar.style.animation='none';
-    if(currentStreamAgent==='gpt'){
+    if(currentStreamAgent==='gpt'||currentStreamAgent==='google'){
       var lines=(currentStreamText.match(/\n/g)||[]).length;
       if(currentProgressLabel) currentProgressLabel.textContent='✓ '+currentStreamTokens+' tok · '+lines+' righe';
       pendingChipsEl=currentGptChipsEl;
     } else if(currentStreamAgent==='claude'){
-      // Show final token count briefly then fade
-      if(currentProgressBar){currentProgressBar.classList.remove('indeterminate');currentProgressBar.style.width='100%';currentProgressBar.style.animation='none';}
       if(currentProgressLabel) currentProgressLabel.textContent='✓ '+currentStreamTokens+' tok';
       var el=currentProgressEl;
-      setTimeout(function(){
-        if(el&&el.parentNode){el.style.transition='opacity .5s';el.style.opacity='0';
-          setTimeout(function(){if(el&&el.parentNode)el.parentNode.removeChild(el);},500);}
-      },1200);
+      setTimeout(function(){ if(el&&el.parentNode){el.style.transition='opacity .5s';el.style.opacity='0';setTimeout(function(){if(el&&el.parentNode)el.parentNode.removeChild(el);},500);} },1200);
     }
   }
   currentStreamBody=null; currentStreamText=''; currentStreamAgent=null;
@@ -1157,42 +1212,45 @@ function showConfirmCard(d){
   removePlaceholder();
   var {row, body} = createLogRow('router');
 
-  // Update the label to show it's a confirmation
-  var lbl = row.querySelector('.log-label');
-  if(lbl) lbl.textContent = 'Router:';
+  var card=document.createElement('div');
+  card.className='confirm-card';
 
-  var card = document.createElement('div');
-  card.className = 'confirm-card';
-
-  var _reasonerOpts = d.available_reasoners.map(function(m){
+  var _reasonerOpts=d.available_reasoners.map(function(m){
     return '<option value="'+m.id+'" '+(m.id===d.reasoner_model?'selected':'')+'>'
       +m.label+' ['+m.tier+']</option>';
   }).join('');
 
-  var anthropicImpl = d.available_implementers.filter(function(m){return m.provider==='anthropic';});
-  var openaiImpl    = d.available_implementers.filter(function(m){return m.provider==='openai';});
+  // Raggruppa implementer per provider: Anthropic, OpenAI, Google
+  var anthropicImpl=d.available_implementers.filter(function(m){return m.provider==='anthropic';});
+  var openaiImpl   =d.available_implementers.filter(function(m){return m.provider==='openai';});
+  var googleImpl   =d.available_implementers.filter(function(m){return m.provider==='google';});
   var _implOpts='';
   if(anthropicImpl.length){
     _implOpts+='<optgroup label="── Anthropic ──">';
     _implOpts+=anthropicImpl.map(function(m){
       return '<option value="'+m.id+'" '+(m.id===d.implementer_model?'selected':'')+'>'
         +m.label+' ['+m.tier+']</option>';
-    }).join('');
-    _implOpts+='</optgroup>';
+    }).join(''); _implOpts+='</optgroup>';
   }
   if(openaiImpl.length){
     _implOpts+='<optgroup label="── OpenAI ──">';
     _implOpts+=openaiImpl.map(function(m){
       return '<option value="'+m.id+'" '+(m.id===d.implementer_model?'selected':'')+'>'
         +m.label+' ['+m.tier+']</option>';
-    }).join('');
-    _implOpts+='</optgroup>';
+    }).join(''); _implOpts+='</optgroup>';
+  }
+  if(googleImpl.length){
+    _implOpts+='<optgroup label="── Google Gemini ──">';
+    _implOpts+=googleImpl.map(function(m){
+      var free=m.free_tier?' ✓free':'';
+      return '<option value="'+m.id+'" '+(m.id===d.implementer_model?'selected':'')+'>'
+        +m.label+' ['+m.tier+']'+free+'</option>';
+    }).join(''); _implOpts+='</optgroup>';
   }
 
-  var _rat = d.model_rationale
-    ? '<div class="rationale">'+d.model_rationale+'</div>' : '';
+  var _rat=d.model_rationale?'<div class="rationale">'+d.model_rationale+'</div>':'';
 
-  card.innerHTML =
+  card.innerHTML=
     '<div class="cc-title">'+t('confirmTitle')+'</div>'+
     '<div class="cc-row"><span class="cc-key">Difficoltà</span>'+
     '<span class="diff-tag '+d.difficulty+'">'+d.difficulty.toUpperCase()+'</span></div>'+
@@ -1204,7 +1262,7 @@ function showConfirmCard(d){
     '<select id="selReasoner" onchange="checkSameModel()">'+_reasonerOpts+'</select>'+
     '<select id="selImplementer" onchange="checkSameModel()">'+_implOpts+'</select>'+
     '</div>'+
-    '<div id="sameModelWarn" class="same-warn">⚠ Stesso modello per entrambi i ruoli — funziona, ma il loop è ridondante.</div>'+
+    '<div id="sameModelWarn" class="same-warn">'+t('sameModelWarn')+'</div>'+
     _rat+
     '<div class="cc-actions">'+
     '<button class="btn-ok" onclick="confirmModels(false)">'+t('btnStart')+'</button>'+
@@ -1229,24 +1287,20 @@ function confirmModels(change){
 }
 
 // ── Answer box ─────────────────────────────
-var currentAnswerWrapper = null;
+var currentAnswerWrapper=null;
 
 function showAnswerBox(question){
   removePlaceholder();
   if(currentAnswerWrapper&&currentAnswerWrapper.parentNode)
     currentAnswerWrapper.parentNode.removeChild(currentAnswerWrapper);
-
-  var {row, body} = createLogRow('claude');
-  currentAnswerWrapper = row;
-
-  var box = document.createElement('div');
-  box.className = 'answer-box';
-  box.innerHTML =
-    '<div class="answer-q">❓ '+question+'</div>'+
+  var {row, body}=createLogRow('claude');
+  currentAnswerWrapper=row;
+  var box=document.createElement('div');
+  box.className='answer-box';
+  box.innerHTML='<div class="answer-q">❓ '+question+'</div>'+
     '<div class="answer-row">'+
     '<input class="answer-input" id="ansInput" placeholder="'+t('answerPlaceholder')+'" onkeydown="if(event.key===\'Enter\')sendAnswer()"/>'+
     '<button class="answer-btn" onclick="sendAnswer()">'+t('answerBtn')+'</button></div>';
-
   body.appendChild(box);
   document.getElementById('ansInput')?.focus();
   scrollFeed();
@@ -1257,10 +1311,10 @@ function sendAnswer(){
   if(!val||!sessionId) return;
   addSimpleMsg('user',val);
   if(currentAnswerWrapper){
-    var row=currentAnswerWrapper.querySelector('.answer-row');
-    if(row)row.remove();
-    var box=currentAnswerWrapper.querySelector('.answer-box');
-    if(box){box.style.borderTopColor='var(--border)';box.style.opacity='.7';}
+    var r2=currentAnswerWrapper.querySelector('.answer-row');
+    if(r2)r2.remove();
+    var b2=currentAnswerWrapper.querySelector('.answer-box');
+    if(b2){b2.style.borderTopColor='var(--border)';b2.style.opacity='.7';}
   }
   currentAnswerWrapper=null;
   fetch('/respond/'+sessionId,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({response:val})});
@@ -1270,8 +1324,7 @@ function sendAnswer(){
 async function stopRun(){
   if(es){es.close();es=null;}
   if(sessionId){try{await fetch('/stop/'+sessionId,{method:'POST'});}catch(e){}}
-  setStatus(t('statusStopped'));
-  stopTimer(false);
+  setStatus(t('statusStopped')); stopTimer(false);
   addSimpleMsg('system',t('stoppedMsg'));
   document.getElementById('stopBtn').classList.remove('visible');
   document.getElementById('iterBadge').classList.remove('visible');
@@ -1281,8 +1334,7 @@ async function stopRun(){
 
 function newTask(){
   if(es){es.close();es=null;}
-  sessionId=null;
-  isParallel=false;
+  sessionId=null; isParallel=false;
   document.getElementById('messages').innerHTML='<div class="placeholder-msg" id="placeholder" data-i18n="placeholder">// waiting for a task...</div>';
   document.getElementById('doneBanner').classList.remove('show');
   document.getElementById('stopBtn').classList.remove('visible');
@@ -1290,8 +1342,9 @@ function newTask(){
   var cb=document.getElementById('continueBox'); if(cb)cb.style.display='block';
   var ci=document.getElementById('continueInput'); if(ci)ci.value='';
   document.getElementById('costBar').classList.remove('visible');
+  document.getElementById('googleCostCell').style.display='none';
   resetTimer(); currentAnswerWrapper=null;
-  costs.anthropic={cost:0,tokens:0}; costs.openai={cost:0,tokens:0}; costs.total=0;
+  costs.anthropic={cost:0,tokens:0}; costs.openai={cost:0,tokens:0}; costs.google={cost:0,tokens:0}; costs.total=0;
   updateCostBar();
   document.getElementById('taskInput').value='';
   document.getElementById('taskInput').focus();
@@ -1307,7 +1360,7 @@ async function startRun(){
   if(!task) return;
   document.getElementById('messages').innerHTML='';
   document.getElementById('doneBanner').classList.remove('show');
-  costs.anthropic={cost:0,tokens:0}; costs.openai={cost:0,tokens:0}; costs.total=0;
+  costs.anthropic={cost:0,tokens:0}; costs.openai={cost:0,tokens:0}; costs.google={cost:0,tokens:0}; costs.total=0;
   updateCostBar(); showCostBar();
   document.getElementById('runBtn').disabled=true;
   document.getElementById('newBtn').style.display='none';
@@ -1324,13 +1377,16 @@ async function startRun(){
 
 // ── Parallel Dashboard ────────────────────
 var parallelDashEl=null, parallelChipsEl=null;
+var _parallelProvider='openai';
 
-function showParallelDashboard(chunks){
+function showParallelDashboard(chunks, provider){
+  _parallelProvider = provider || 'openai';
   removePlaceholder();
-  var {row, body} = createLogRow('gpt');
+  var agentKey = _parallelProvider === 'google' ? 'google' : 'gpt';
+  var {row, body} = createLogRow(agentKey);
 
   var dash=document.createElement('div');
-  dash.className='parallel-dash';
+  dash.className='parallel-dash' + (_parallelProvider==='google' ? ' provider-google' : '');
   dash.innerHTML=
     '<div class="pd-header"><div class="pd-spark"></div>⚡ '+chunks.length+' '+t('parallelHeader')+'</div>'+
     '<div class="pd-workers" id="parallelWorkers"></div>';
@@ -1338,7 +1394,8 @@ function showParallelDashboard(chunks){
   var workersEl=dash.querySelector('#parallelWorkers');
   chunks.forEach(function(ch){
     var card=document.createElement('div');
-    card.className='worker-card waiting'; card.id='worker-'+ch.id;
+    var googleCls = _parallelProvider==='google' ? ' google-worker' : '';
+    card.className='worker-card waiting'+googleCls; card.id='worker-'+ch.id;
     card.innerHTML=
       '<div class="worker-id">Worker '+ch.id+'</div>'+
       '<div class="worker-title">'+ch.title+'</div>'+
@@ -1354,8 +1411,7 @@ function showParallelDashboard(chunks){
   parallelChips.className='gpt-files-wrap'; parallelChips.id='parallel-chips';
   parallelChips.style.marginTop='6px';
 
-  body.appendChild(dash);
-  body.appendChild(parallelChips);
+  body.appendChild(dash); body.appendChild(parallelChips);
   parallelDashEl=dash; parallelChipsEl=parallelChips;
   scrollFeed();
 }
@@ -1367,10 +1423,13 @@ function updateWorker(chunkId,state,statusText,lines){
   var bar=document.getElementById('wbar-'+chunkId);
   var linesEl=document.getElementById('wlines-'+chunkId);
   if(!card)return;
-  card.className='worker-card '+state;
+  // Preserva la classe google-worker
+  var googleCls=card.className.includes('google-worker')?' google-worker':'';
+  card.className='worker-card '+state+googleCls;
   dot.className='worker-dot '+state;
   bar.className='worker-bar '+state;
-  var colors={running:'var(--green)',done:'var(--green)',error:'var(--red)',waiting:'#bbb'};
+  var colorRunning=_parallelProvider==='google'?'var(--blue)':'var(--green)';
+  var colors={running:colorRunning,done:colorRunning,error:'var(--red)',waiting:'#bbb'};
   stat.style.color=colors[state]||'#bbb'; stat.textContent=statusText;
   if(lines>0) linesEl.textContent=lines+' righe prodotte';
   scrollFeed();
@@ -1379,7 +1438,7 @@ function updateWorker(chunkId,state,statusText,lines){
 function finalizeParallelDashboard(completed,failed){
   if(!parallelDashEl)return;
   var h=parallelDashEl.querySelector('.pd-header');
-  if(h){h.innerHTML='<div class="pd-spark" style="background:var(--red);animation:none"></div>✓ Parallelo completato — '+completed.length+'/'+(completed.length+failed.length)+' chunk';h.style.color='var(--red)';}
+  if(h){h.innerHTML='<div class="pd-spark" style="background:var(--red);animation:none"></div>✓ Completato — '+completed.length+'/'+(completed.length+failed.length)+' chunk';h.style.color='var(--red)';}
   parallelDashEl=null;
 }
 
@@ -1389,7 +1448,6 @@ function extToLang(fn){
   var map={py:'python',js:'javascript',ts:'typescript',html:'html',css:'css',json:'json',md:'markdown',sh:'bash',yaml:'yaml',yml:'yaml',toml:'toml',txt:'text',rs:'rust',go:'go',java:'java',rb:'ruby'};
   return map[ext]||ext||'code';
 }
-
 function openCodeModal(filename,code){
   document.getElementById('modalFilename').textContent=filename;
   document.getElementById('modalLang').textContent=extToLang(filename);
@@ -1411,10 +1469,9 @@ function copyModalCode(){
     setTimeout(function(){btn.textContent=t('btnCopy');btn.className='cm-copy';},2000);
   });
 }
-document.addEventListener('keydown',function(e){if(e.key==='Escape')closeCodeModalDirect();});
 
-// ── File chips builder ─────────────────────
-function buildFileChips(container,files,projPath){
+// ── File chips ─────────────────────────────
+function buildFileChips(container,files,projPath,isGoogle){
   if(!container)return;
   container.innerHTML='';
   files.forEach(function(filePath){
@@ -1422,10 +1479,9 @@ function buildFileChips(container,files,projPath){
     var filename=parts.pop();
     var relPath=parts.slice(-2).concat([filename]).join('/');
     var ext=(filename.split('.').pop()||'').toLowerCase();
-    var extLabels={py:'py',js:'js',ts:'ts',html:'html',css:'css',json:'json',md:'md',sh:'sh',yaml:'yml',yml:'yml',toml:'toml',txt:'txt',rs:'rs',go:'go'};
-    var extLabel=extLabels[ext]||ext;
+    var extLabel={py:'py',js:'js',ts:'ts',html:'html',css:'css',json:'json',md:'md',sh:'sh',yaml:'yml',yml:'yml',toml:'toml',txt:'txt',rs:'rs',go:'go'}[ext]||ext;
     var chip=document.createElement('button');
-    chip.className='file-chip';
+    chip.className='file-chip'+(isGoogle?' google-chip':'');
     chip.innerHTML='📄 <span>'+relPath+'</span><span class="chip-ext">'+extLabel+'</span>';
     chip.onclick=function(){
       if(codeStore[filePath]){openCodeModal(filename,codeStore[filePath]);}
@@ -1454,31 +1510,30 @@ function buildFileChips(container,files,projPath){
 function handleEvent(type,d){
   switch(type){
     case 'loop_start':
-      setStatus(t('statusClassifying'));
-      startTimer();
+      setStatus(t('statusClassifying')); startTimer();
       addSimpleMsg('system','Task avviato: <em>'+d.task+'</em>');
       break;
     case 'agent_start':
       if(d.agent==='router') setStatus(t('statusClassifying'));
       else setStatus((d.label||'')+(d.model?' · '+d.model:'')+' '+t('statusRunning'));
-      if(isParallel && d.agent==='gpt') break;  // workers use parallel dashboard
+      if(isParallel&&(d.agent==='gpt'||d.agent==='google')) break;
       startStreamBubble(d.agent, d.model||null);
       break;
     case 'agent_chunk':
-      if(isParallel && d.agent==='gpt') break;
+      if(isParallel&&(d.agent==='gpt'||d.agent==='google')) break;
       appendStream(d.text); break;
     case 'agent_end':
-      if(isParallel && d.agent==='gpt') break;
+      if(isParallel&&(d.agent==='gpt'||d.agent==='google')) break;
       endStream(); break;
     case 'cost_update':{
       var p=d.provider;
       if(p==='anthropic'){costs.anthropic.cost+=d.call_cost||0;costs.anthropic.tokens+=(d.input_tokens||0)+(d.output_tokens||0);}
+      else if(p==='google'){costs.google.cost+=d.call_cost||0;costs.google.tokens+=(d.input_tokens||0)+(d.output_tokens||0);}
       else{costs.openai.cost+=d.call_cost||0;costs.openai.tokens+=(d.input_tokens||0)+(d.output_tokens||0);}
-      costs.total=d.total_cost||costs.anthropic.cost+costs.openai.cost;
+      costs.total=d.total_cost||costs.anthropic.cost+costs.openai.cost+costs.google.cost;
       updateCostBar(); break;}
     case 'confirm_models':
-      setStatus(t('statusWaiting'));
-      showConfirmCard(d); break;
+      setStatus(t('statusWaiting')); showConfirmCard(d); break;
     case 'models_updated':
       addSimpleMsg('system',t('modelsUpdated')+' <strong>'+d.reasoner_label+'</strong> + <strong>'+d.implementer_label+'</strong>');
       setStatus(t('statusRunning')); break;
@@ -1489,64 +1544,51 @@ function handleEvent(type,d){
     case 'claude_result':
       if(d.alignment==='deviated') addSimpleMsg('system','<span class="align-warn">'+t('gptOffTrack')+'</span>');
       break;
-    case 'gpt_realignment':
-      addSimpleMsg('claude',t('realign')+' '+d.feedback); break;
-    case 'fix_needed':
-      addSimpleMsg('claude',t('corrFeedback')+' '+d.feedback); break;
+    case 'gpt_realignment': addSimpleMsg('claude',t('realign')+' '+d.feedback); break;
+    case 'fix_needed':      addSimpleMsg('claude',t('corrFeedback')+' '+d.feedback); break;
     case 'spec_ready': break;
     case 'parallel_start':
       isParallel=true;
-      showParallelDashboard(d.chunks); break;
+      // Determina provider dal modello se disponibile
+      _parallelProvider = d.provider || 'openai';
+      showParallelDashboard(d.chunks, _parallelProvider); break;
     case 'parallel_chunk_start':
       updateWorker(d.chunk_id,'waiting',t('parallelWaiting'),0); break;
-
     case 'parallel_chunk_stream':{
       var sbar=document.getElementById('wsbar-'+d.chunk_id);
       var stok=document.getElementById('wtok-'+d.chunk_id);
       var slines=document.getElementById('wlines-'+d.chunk_id);
-      if(sbar){
-        sbar.className='worker-stream-bar running';
-        // stima larghezza: 1 tok ~ 4 chars, target ~2000 tok = 100%
-        var pct=Math.min(95,Math.round((d.tok/2000)*100));
-        sbar.style.width=pct+'%';
-        sbar.style.animation='none'; // stop indeterminate, usa width reale
-      }
+      if(sbar){ sbar.className='worker-stream-bar running'; var pct=Math.min(95,Math.round((d.tok/2000)*100)); sbar.style.width=pct+'%'; sbar.style.animation='none'; }
       if(stok) stok.textContent=d.tok+' tok';
       if(slines) slines.textContent=d.lines+' righe';
       break;}
-    case 'parallel_chunk_running':
-      updateWorker(d.chunk_id,'running',t('parallelWorking'),0); break;
-    case 'parallel_chunk_continuation':
-      updateWorker(d.chunk_id,'running','continuo (tent. '+d.attempt+')...',0); break;
+    case 'parallel_chunk_running': updateWorker(d.chunk_id,'running',t('parallelWorking'),0); break;
+    case 'parallel_chunk_continuation': updateWorker(d.chunk_id,'running','continuo (tent. '+d.attempt+')...',0); break;
     case 'parallel_chunk_done':{
       updateWorker(d.chunk_id,'done','✓ '+d.lines+' righe',d.lines);
-      var sbar2=document.getElementById('wsbar-'+d.chunk_id);
-      var slines2=document.getElementById('wlines-'+d.chunk_id);
-      if(sbar2){sbar2.className='worker-stream-bar done';sbar2.style.animation='none';}
-      if(slines2) slines2.textContent=d.lines+' righe';
+      var sb2=document.getElementById('wsbar-'+d.chunk_id);
+      if(sb2){sb2.className='worker-stream-bar done';sb2.style.animation='none';}
       break;}
-    case 'parallel_chunk_error':
-      updateWorker(d.chunk_id,'error','✗ '+d.error,0); break;
+    case 'parallel_chunk_error': updateWorker(d.chunk_id,'error','✗ '+d.error,0); break;
     case 'parallel_end':{
       finalizeParallelDashboard(d.completed,d.failed);
       var failNote=d.failed.length?' · '+d.failed.length+' falliti':'';
       addSimpleMsg('system','🏁 '+d.completed.length+' '+t('workers')+failNote+' '+t('parallelIntegrating'));
       break;}
-    case 'file_saved':
+    case 'file_saved':{
       lastSavedPath=d.path; lastSavedFiles=d.files||[];
-      if(pendingChipsEl){buildFileChips(pendingChipsEl,lastSavedFiles,lastSavedPath);pendingChipsEl=null;}
-      if(parallelChipsEl){buildFileChips(parallelChipsEl,lastSavedFiles,lastSavedPath);parallelChipsEl=null;}
+      var isGoogle=d.provider==='google';
+      if(pendingChipsEl){buildFileChips(pendingChipsEl,lastSavedFiles,lastSavedPath,isGoogle);pendingChipsEl=null;}
+      if(parallelChipsEl){buildFileChips(parallelChipsEl,lastSavedFiles,lastSavedPath,isGoogle);parallelChipsEl=null;}
       if(d.multi_file&&d.files&&d.files.length>1)
         addSimpleMsg('system','📁 '+d.files.length+' file salvati in <code>'+d.path.replace(/\\/g,'/').split('/').pop()+'/</code>');
-      else{var fn2=(d.files&&d.files[0])?d.files[0].replace(/\\/g,'/').split('/').pop():d.path;addSimpleMsg('system','💾 Salvato: <code>'+fn2+'</code>');}
-      break;
+      else{ var fn2=(d.files&&d.files[0])?d.files[0].replace(/\\/g,'/').split('/').pop():d.path; addSimpleMsg('system','💾 Salvato: <code>'+fn2+'</code>'); }
+      break;}
     case 'waiting_human':
-      setStatus(t('statusWaiting'));
-      showAnswerBox(d.question); break;
+      setStatus(t('statusWaiting')); showAnswerBox(d.question); break;
     case 'human_response': break;
     case 'loop_end':
-      setStatus(t('statusDone'));
-      stopTimer(d.success);
+      setStatus(t('statusDone')); stopTimer(d.success);
       document.getElementById('stopBtn').classList.remove('visible');
       document.getElementById('iterBadge').classList.remove('visible');
       document.getElementById('runBtn').disabled=false;
@@ -1569,6 +1611,15 @@ function handleEvent(type,d){
       document.getElementById('iterBadge').classList.remove('visible');
       document.getElementById('runBtn').disabled=false;
       addSimpleMsg('system',t('timeoutMsg')); break;
+    case 'reflect_start':
+      addSimpleMsg('system', '🔍 Analizzo la sessione per suggerimenti di memoria...');
+      break;
+    case 'reflect_suggestions':
+      showReflectCard(d.suggestions);
+      break;
+    case 'reflect_end':
+      // nessuna suggestion o errore silenzioso
+      break;
     case 'ping': break;
   }
 }
@@ -1591,10 +1642,98 @@ async function sendContinue(){
   if(es)es.close();
   es=new EventSource('/stream/'+sessionId);
   es.onmessage=e=>{var ev=JSON.parse(e.data);handleEvent(ev.type,ev.data||{});};
-  es.onerror=()=>{setStatus('errore connessione');document.getElementById('stopBtn').classList.remove('visible');document.getElementById('runBtn').disabled=false;};
+  es.onerror=()=>{setStatus(t('statusError'));document.getElementById('stopBtn').classList.remove('visible');document.getElementById('runBtn').disabled=false;};
   document.getElementById('continueInput').value='';
   setStatus(t('statusRunning'));
 }
+// ── Reflect (suggerimenti memoria post-sessione) ───────────────────────────
+var _reflectSuggestions = [];
+var _reflectIdx = 0;
+var _reflectCardEl = null;
+
+function showReflectCard(suggestions){
+  _reflectSuggestions = suggestions;
+  _reflectIdx = 0;
+  _buildReflectCard();
+}
+
+function _buildReflectCard(){
+  // Rimuovi card precedente se esiste
+  if(_reflectCardEl && _reflectCardEl.parentNode)
+    _reflectCardEl.parentNode.removeChild(_reflectCardEl);
+
+  if(_reflectIdx >= _reflectSuggestions.length){
+    // Tutti processati
+    var {row, body} = createLogRow('system');
+    body.innerHTML = '💾 Suggerimenti memoria processati — <code>MEMORY.md</code> aggiornato.';
+    _reflectCardEl = null;
+    scrollFeed();
+    return;
+  }
+
+  var s = _reflectSuggestions[_reflectIdx];
+  var remaining = _reflectSuggestions.length - _reflectIdx;
+
+  var {row, body} = createLogRow('system');
+  _reflectCardEl = row;
+
+  var card = document.createElement('div');
+  card.className = 'reflect-card';
+
+  var title = document.createElement('div');
+  title.className = 'reflect-title';
+  title.textContent = 'Aggiungere a MEMORY.md? (' + (_reflectIdx+1) + '/' + _reflectSuggestions.length + ')';
+
+  var item = document.createElement('div');
+  item.className = 'reflect-item';
+  item.innerHTML =
+    '<span class="reflect-section">' + s.section + '</span>' +
+    '<span class="reflect-text">— ' + s.text + '</span>';
+
+  var btnRow = document.createElement('div');
+  btnRow.style.cssText = 'display:flex;gap:6px;margin-top:.55rem';
+
+  var btnOk = document.createElement('button');
+  btnOk.className = 'reflect-btn-ok';
+  btnOk.textContent = '✓ Aggiungi';
+  btnOk.onclick = function(){
+    btnOk.disabled = true; btnSkip.disabled = true;
+    btnOk.textContent = '...';
+    fetch('/memory/append', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({section: s.section, text: s.text})
+    }).then(function(r){ return r.json(); }).then(function(d){
+      if(d.ok){
+        item.style.opacity = '.5';
+        btnOk.textContent = '✓ Aggiunto';
+      } else {
+        btnOk.textContent = '✗ Errore';
+      }
+      setTimeout(function(){ _reflectIdx++; _buildReflectCard(); }, 600);
+    }).catch(function(){
+      btnOk.textContent = '✗ Errore';
+      setTimeout(function(){ _reflectIdx++; _buildReflectCard(); }, 600);
+    });
+  };
+
+  var btnSkip = document.createElement('button');
+  btnSkip.className = 'reflect-btn-skip';
+  btnSkip.textContent = 'Salta →';
+  btnSkip.onclick = function(){
+    _reflectIdx++;
+    _buildReflectCard();
+  };
+
+  btnRow.appendChild(btnOk);
+  btnRow.appendChild(btnSkip);
+  card.appendChild(title);
+  card.appendChild(item);
+  card.appendChild(btnRow);
+  body.appendChild(card);
+  scrollFeed();
+}
+
 </script>
 </body>
 </html>
