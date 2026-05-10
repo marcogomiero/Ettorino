@@ -1,0 +1,3 @@
+## 2026-05-07 - Smooth Scroll Layout Thrashing Optimization
+**Learning:** Found a major frontend performance bottleneck in the `scrollFeed()` function (`templates/index.html`). The function was being called continuously during Server-Sent Events (SSE) streaming updates to auto-scroll the chat to the bottom. Each call triggered `window.scrollTo({behavior: 'smooth'})` synchronously, multiple times per second. This caused severe layout thrashing and main-thread jank.
+**Action:** Implemented a simple 100ms throttle via `setTimeout`. Next time I encounter synchronous DOM/Layout updates triggered by SSE or WebSocket streams, I should always look for batching or throttling opportunities to prevent blocking the main thread.
