@@ -90,7 +90,6 @@ On hard tasks, up to 3 implementer workers run simultaneously. Each worker card 
 | 🌙 **Dark mode** | One click, persisted in localStorage |
 | 🧠 **MEMORY.md** | Persistent instructions injected into Claude every session — edit once, applied forever |
 | 💡 **Task examples** | Built-in easy/medium/hard examples to get started quickly |
-| 🐳 **Container-ready** | Multi-stage Chainguard image, runs anywhere with Docker |
 
 ---
 
@@ -160,69 +159,198 @@ Each worker streams its progress live. The implementer provider (GPT or Gemini) 
 
 ## Installation
 
-### Option A — Python (local dev)
+Ettorino runs as a plain Python process — locally on your machine or on any Linux VM.
+No containers required.
 
-**Prerequisites:** Python 3.10+, Anthropic API key (required), OpenAI and/or Google API key (at least one)
+**Prerequisites:** Python 3.10+, an Anthropic API key (required), at least one between OpenAI and Google API key.
+
+### Step 1 — Clone the repo
 
 ```bash
-# 1. Install dependencies
-pip install flask anthropic openai google-genai python-dotenv
+git clone https://github.com/marcogomiero/Ettorino.git
+cd Ettorino
+```
 
-# 2. Set your keys in .env
+### Step 2 — Create a virtual environment
+
+```bash
+python -m venv .venv
+
+# macOS / Linux
+source .venv/bin/activate
+
+# Windows
+.venv\Scripts\activate
+```
+
+### Step 3 — Install dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+Or manually:
+
+```bash
+pip install flask anthropic openai google-genai python-dotenv
+```
+
+### Step 4 — Configure API keys
+
+Create a `.env` file in the project root (never commit this file):
+
+```env
 ANTHROPIC_API_KEY=sk-ant-...
 OPENAI_API_KEY=sk-...          # optional if using Gemini only
 GOOGLE_API_KEY=AIza...         # optional if using GPT only
 ETTORINO_VERSION=0.1.0
+```
 
-# 3. Run
+For step-by-step instructions on getting each key, see [`docs/API_KEYS.md`](docs/API_KEYS.md).
+
+### Step 5 — Run
+
+```bash
 python ettorino.py
 ```
 
-Open **http://localhost:5000** — Ettorino does the rest.
+Open **http://localhost:5000** in your browser — Ettorino does the rest.
 
-> If `GOOGLE_API_KEY` is not set, Gemini models are silently disabled and the system falls back to GPT. If `OPENAI_API_KEY` is not set, only Gemini models appear in the implementer dropdown.
+> **Tip:** if you use PyCharm or VS Code, just open the project folder and run `ettorino.py`
+> from the IDE. The `.env` file is picked up automatically.
 
 ---
 
-### Option B — Docker
+## Running on a cloud VM
 
-**Prerequisites:** Docker, API keys
+If you want Ettorino always-on and accessible from any device, a small Linux VM works perfectly.
+Any provider works — DigitalOcean, Hetzner, AWS EC2, Google Cloud, Azure.
+A 2 vCPU / 2 GB RAM instance is more than enough.
 
-```bash
-# 1. Clone and enter the repo
-git clone https://github.com/marcogomiero/Ettorino.git && cd Ettorino
-
-# 2. Create your .env
-cat > .env << EOF
-ANTHROPIC_API_KEY=sk-ant-...
-OPENAI_API_KEY=sk-...
-GOOGLE_API_KEY=AIza...
-ETTORINO_VERSION=0.1.0
-EOF
-
-# 3. Build and run
-docker compose up --build
-```
-
-Open **http://localhost:8080**
-
-The `workspace/` folder is persisted in a named Docker volume (`ettorino_workspace`) so generated projects survive container restarts.
-
-#### Manual docker run (without compose)
+### Recommended: Hetzner CX22 (~€4/month) or DigitalOcean Basic Droplet ($6/month)
 
 ```bash
-docker build -t ettorino .
-docker run -p 8080:5000 \
-  -e ANTHROPIC_API_KEY=sk-ant-... \
-  -e OPENAI_API_KEY=sk-... \
-  -e GOOGLE_API_KEY=AIza... \
-  -v ettorino_workspace:/app/workspace \
-  ettorino
+# 1. SSH into your VM
+ssh user@your-vm-ip
+
+# 2. Install Python 3.10+ (Ubuntu 22.04 or later already has it)
+sudo apt update && sudo apt install -y python3 python3-pip python3-venv git
+
+# 3. Clone and set up
+git clone https://github.com/marcogomiero/Ettorino.git
+cd Ettorino
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+
+# 4. Create your .env
+nano .env   # paste your keys, save with Ctrl+X
+
+# 5. Run with gunicorn (more stable than the dev server)
+pip install gunicorn
+gunicorn -w 1 --threads 16 --timeout 600 -b 0.0.0.0:5000 ettorino:app
 ```
 
-> **Why `-w 1`?** The agent loop uses in-memory state per session (`event_queues`, `session_costs`, `human_responses`). Multiple workers = isolated processes = broken sessions. One worker + 16 threads handles all concurrent requests safely.
+Ettorino is now reachable at **http://your-vm-ip:5000**.
 
-> **Port note:** avoid port 6000 — Chrome and Edge block it (`ERR_UNSAFE_PORT`). Use 8080, 8888, or any port ≥ 1024 not in the browser unsafe list.
+### Keep it running with systemd
+
+Create `/etc/systemd/system/ettorino.service`:
+
+```ini
+[Unit]
+Description=Ettorino AI Agent
+After=network.target
+
+[Service]
+User=your-user
+WorkingDirectory=/home/your-user/Ettorino
+EnvironmentFile=/home/your-user/Ettorino/.env
+ExecStart=/home/your-user/Ettorino/.venv/bin/gunicorn \
+    -w 1 --threads 16 --timeout 600 \
+    -b 0.0.0.0:5000 ettorino:app
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable ettorino
+sudo systemctl start ettorino
+
+# Check status
+sudo systemctl status ettorino
+
+# View logs live
+sudo journalctl -u ettorino -f
+```
+
+### HTTPS with nginx + Let's Encrypt (optional)
+
+If you point a domain at the VM, you can get free HTTPS in a few minutes:
+
+```bash
+sudo apt install -y nginx certbot python3-certbot-nginx
+
+# Create nginx config for your domain
+sudo nano /etc/nginx/sites-available/ettorino
+```
+
+```nginx
+server {
+    server_name ettorino.yourdomain.com;
+
+    location / {
+        proxy_pass http://127.0.0.1:5000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_buffering off;           # required for SSE streaming
+        proxy_cache off;
+        proxy_read_timeout 600s;       # long-running agent loops
+    }
+}
+```
+
+```bash
+sudo ln -s /etc/nginx/sites-available/ettorino /etc/nginx/sites-enabled/
+sudo certbot --nginx -d ettorino.yourdomain.com
+sudo systemctl reload nginx
+```
+
+> **SSE note:** the `proxy_buffering off` directive is mandatory. Without it, nginx
+> buffers the event stream and the UI appears frozen until the task completes.
+
+### Firewall
+
+```bash
+# Allow SSH, HTTP, HTTPS — block everything else
+sudo ufw allow OpenSSH
+sudo ufw allow 80
+sudo ufw allow 443
+sudo ufw enable
+
+# If you're NOT using nginx and want direct access on port 5000:
+sudo ufw allow 5000
+```
+
+> **Security note:** never expose port 5000 directly to the internet without a password
+> or firewall rule limiting access to your IP. Ettorino has no built-in authentication.
+> If you use nginx + HTTPS, add HTTP Basic Auth for a quick layer of protection:
+> `sudo htpasswd -c /etc/nginx/.htpasswd your-username`
+> then add `auth_basic` directives to the nginx config.
+
+### Updating
+
+```bash
+cd Ettorino
+git pull
+source .venv/bin/activate
+pip install -r requirements.txt
+sudo systemctl restart ettorino
+```
 
 ---
 
@@ -242,12 +370,9 @@ Ettorino/
 │   ├── screen_ui.png
 │   ├── screen_confirm.png
 │   └── screen_parallel.png
-├── Dockerfile              ← multi-stage Chainguard build (no shell in runtime)
-├── docker-compose.yml      ← ports, env vars, workspace volume
 ├── requirements.txt
-├── MEMORY.md              ← persistent instructions injected into Claude every session
+├── MEMORY.md               ← persistent instructions injected into Claude every session
 ├── .env                    ← keys and configuration (do not commit)
-├── .dockerignore
 └── .gitignore
 ```
 
@@ -266,12 +391,10 @@ GOOGLE_API_KEY=AIza...         # enables all Gemini models (2.5 Flash free tier 
 # Optional
 ETTORINO_VERSION=0.1.0
 FLASK_PORT=5000
-FLASK_DEBUG=true
+FLASK_DEBUG=true               # set to false in production
 MAX_ITERATIONS=10              # max loop iterations per task
 HUMAN_TIMEOUT=300              # seconds before timeout on user response
 ```
-
-For step-by-step instructions on obtaining each key, see [`docs/API_KEYS.md`](docs/API_KEYS.md).
 
 ### MEMORY.md — persistent instructions
 
@@ -313,24 +436,14 @@ POST /run
         │     │                        each worker streams parallel_chunk_stream events
         │     ├── fix               → run_implementer() with corrective feedback
         │     ├── ask               → waits for user input via SSE
-        │     └── done              → saves state, emits loop_end
+        │     └── done              → saves state, emits loop_end + reflection
         │
         └── [continue?]         /continue → reclassifies + new model confirm card
 ```
 
 All events travel over **Server-Sent Events (SSE)** — no polling, no websockets.
-
----
-
-## Production
-
-```bash
-# Local
-gunicorn -w 1 --threads 16 --timeout 600 ettorino:app
-
-# Docker (recommended)
-docker compose up -d
-```
+In-memory session state means a single process handles all concurrent requests safely —
+do not run multiple gunicorn workers.
 
 ---
 
@@ -340,6 +453,6 @@ docker compose up -d
 - [ ] Gemini 3.1 Pro as default for hard tasks (when GA pricing confirmed)
 - [ ] Mixed-provider parallel runs (some chunks GPT, some Gemini)
 - [ ] Automatic quality/cost benchmark per task
-- [ ] Session persistence on Redis (enables multi-worker scaling)
-- [ ] One-click deploy on Railway / Render
+- [ ] Optional HTTP Basic Auth for VM deployments
+- [ ] One-click deploy scripts for Hetzner and DigitalOcean
 - [ ] Plugin system for external tools (browser, terminal, git)
