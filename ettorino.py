@@ -1,18 +1,17 @@
-import os
 import json
-import time
-import threading
+import os
 import queue
+import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from flask import Flask, render_template, request, Response, jsonify
-import anthropic
-import openai
-from dotenv import load_dotenv
 
-import ssl
+import anthropic
 import httpx
+import openai
 import urllib3
+from dotenv import load_dotenv
+from flask import Flask, render_template, request, Response, jsonify
 
 # ── Google Gemini SDK ───────────────────────
 try:
@@ -28,6 +27,23 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 load_dotenv()
 
 app = Flask(__name__)
+
+# ─────────────────────────────────────────────
+# API KEY AVAILABILITY — rilevata al boot
+# Setta available=True/False su ogni modello in base alle chiavi .env
+# ─────────────────────────────────────────────
+def _detect_available_keys() -> dict[str, bool]:
+    """Ritorna quali provider hanno una chiave API valida (non vuota).
+    La chiave è sufficiente per mostrare i modelli nell'UI e abilitarli.
+    Il controllo su GOOGLE_AVAILABLE (SDK installato) avviene solo al momento
+    della chiamata effettiva in get_google_client(), con messaggio d'errore chiaro."""
+    return {
+        "anthropic": bool(os.environ.get("ANTHROPIC_API_KEY", "").strip()),
+        "openai":    bool(os.environ.get("OPENAI_API_KEY",    "").strip()),
+        "google":    bool(os.environ.get("GOOGLE_API_KEY",    "").strip()),
+    }
+
+# Chiamato una volta alla fine della definizione di MODELS (vedi sotto)
 
 WORKSPACE   = Path("workspace")
 MEMORY_PATH = Path("MEMORY.md")
@@ -189,6 +205,12 @@ MODELS = {
     },
 }
 
+# ── Stampa available=True/False su ogni modello in base alle chiavi .env ──
+def _stamp_model_availability():
+    keys = _detect_available_keys()
+    for m in MODELS.values():
+        m["available"] = keys.get(m["provider"], False)
+
 # Tier → modelli di default
 TIER_MODELS = {
     "easy":     {"reasoner": "claude-haiku-4-5",   "implementer": "gemini-2.5-flash-lite"},
@@ -196,6 +218,9 @@ TIER_MODELS = {
     "hard-mid": {"reasoner": "claude-opus-4-6",    "implementer": "gemini-2.5-pro"},
     "hard":     {"reasoner": "claude-opus-4-7",    "implementer": "o3"},
 }
+
+# Esegui subito — da qui in poi tutti i MODELS hanno il campo "available"
+_stamp_model_availability()
 
 # State globale sessioni
 event_queues    = {}
@@ -228,13 +253,34 @@ def get_openai_client():
     return openai.OpenAI(api_key=key, http_client=_make_http_client())
 
 def get_google_client():
-    """Restituisce un client Google Gemini configurato."""
+    """Restituisce un client Google Gemini configurato.
+    Patcha il client httpx interno dopo la costruzione per bypassare
+    la verifica SSL dei proxy aziendali con certificati self-signed."""
     if not GOOGLE_AVAILABLE:
         raise ValueError("Libreria google-genai non installata. Esegui: pip install google-genai")
     key = os.environ.get("GOOGLE_API_KEY")
     if not key:
         raise ValueError("GOOGLE_API_KEY mancante nel .env")
-    return google_genai.Client(api_key=key)
+
+    client = google_genai.Client(api_key=key)
+
+    # Il SDK google-genai costruisce internamente un httpx.Client.
+    # Lo rimpiazziamo con uno identico ma con verify=False per bypassare
+    # i certificati self-signed dei proxy aziendali.
+    no_ssl_transport = httpx.HTTPTransport(verify=False)
+    no_ssl_client = httpx.Client(
+        transport=no_ssl_transport,
+        verify=False,
+        timeout=120.0,
+    )
+    try:
+        # Percorso interno: client._api_client._httpx_client
+        if hasattr(client, '_api_client') and hasattr(client._api_client, '_httpx_client'):
+            client._api_client._httpx_client = no_ssl_client
+    except Exception:
+        pass  # se la struttura interna cambia, peggio per il SSL — almeno non crasha
+
+    return client
 
 def estimate_tokens(text: str) -> int:
     return max(1, len(text) // 4)
@@ -557,7 +603,7 @@ def run_implementer(anthropic_client: anthropic.Anthropic, openai_client: openai
         model_id = "gpt-4.1"
         provider = "openai"
 
-    agent_key = "claude" if provider == "anthropic" else "gpt"
+    agent_key = "claude" if provider == "anthropic" else ("gemini" if provider == "google" else "gpt")
     emit(q, "agent_start", {"agent": agent_key, "label": "Implementer", "model": MODELS[model_id]["label"]})
 
     system = """Sei l'Implementer di Ettorino. Il tuo ruolo è:
@@ -1202,6 +1248,26 @@ def run_agent_loop(session_id: str, task: str, q: queue.Queue):
     reasoner_model    = override.get("reasoner", suggested_reasoner)
     implementer_model = override.get("implementer", suggested_implementer)
 
+    # ── Fallback automatico se il modello suggerito non ha chiave ──────────
+    def _best_available(model_id: str, role: str) -> str:
+        """Se model_id non è disponibile, ritorna il miglior fallback disponibile dello stesso tier."""
+        if MODELS.get(model_id, {}).get("available", False):
+            return model_id
+        tier = MODELS.get(model_id, {}).get("tier", "medium")
+        tier_order = ["easy", "medium", "hard-mid", "hard"]
+        # cerca prima stesso tier, poi tier adiacenti
+        for t in [tier] + [x for x in tier_order if x != tier]:
+            candidates = [
+                k for k, v in MODELS.items()
+                if role in v["role"] and v.get("tier") == t and v.get("available", False)
+            ]
+            if candidates:
+                return candidates[0]
+        return model_id  # nessun fallback trovato: torna l'originale (sarà segnalato come no-key)
+
+    reasoner_model    = _best_available(reasoner_model,    "reasoner")
+    implementer_model = _best_available(implementer_model, "implementer")
+
     emit(q, "confirm_models", {
         "session_id":         session_id,
         "difficulty":         difficulty,
@@ -1214,11 +1280,18 @@ def run_agent_loop(session_id: str, task: str, q: queue.Queue):
         "implementer_label":  MODELS[implementer_model]["label"],
         "estimated_cost":     est_cost,
         "available_reasoners": [
-            {"id": k, "label": v["label"], "tier": v["tier"]}
+            {
+                "id": k, "label": v["label"], "tier": v["tier"],
+                "provider": v["provider"], "available": v.get("available", False),
+            }
             for k, v in MODELS.items() if "reasoner" in v["role"]
         ],
         "available_implementers": [
-            {"id": k, "label": v["label"], "tier": v["tier"], "provider": v["provider"]}
+            {
+                "id": k, "label": v["label"], "tier": v["tier"],
+                "provider": v["provider"], "available": v.get("available", False),
+                "free_tier": v.get("free_tier", False),
+            }
             for k, v in MODELS.items() if "implementer" in v["role"]
         ],
     })
@@ -1419,6 +1492,24 @@ def continue_agent_loop(session_id: str, followup: str, q: queue.Queue):
     reasoner_model    = override.get("reasoner", suggested_reasoner)
     implementer_model = override.get("implementer", suggested_implementer)
 
+    # Fallback automatico se chiave mancante
+    def _best_available(model_id: str, role: str) -> str:
+        if MODELS.get(model_id, {}).get("available", False):
+            return model_id
+        tier = MODELS.get(model_id, {}).get("tier", "medium")
+        tier_order = ["easy", "medium", "hard-mid", "hard"]
+        for t in [tier] + [x for x in tier_order if x != tier]:
+            candidates = [
+                k for k, v in MODELS.items()
+                if role in v["role"] and v.get("tier") == t and v.get("available", False)
+            ]
+            if candidates:
+                return candidates[0]
+        return model_id
+
+    reasoner_model    = _best_available(reasoner_model,    "reasoner")
+    implementer_model = _best_available(implementer_model, "implementer")
+
     emit(q, "confirm_models", {
         "session_id": session_id, "difficulty": difficulty,
         "reasoning": reasoning, "model_rationale": model_rationale,
@@ -1427,11 +1518,18 @@ def continue_agent_loop(session_id: str, followup: str, q: queue.Queue):
         "implementer_model": implementer_model, "implementer_label": MODELS[implementer_model]["label"],
         "estimated_cost": est_cost,
         "available_reasoners": [
-            {"id": k, "label": v["label"], "tier": v["tier"]}
+            {
+                "id": k, "label": v["label"], "tier": v["tier"],
+                "provider": v["provider"], "available": v.get("available", False),
+            }
             for k, v in MODELS.items() if "reasoner" in v["role"]
         ],
         "available_implementers": [
-            {"id": k, "label": v["label"], "tier": v["tier"], "provider": v["provider"]}
+            {
+                "id": k, "label": v["label"], "tier": v["tier"],
+                "provider": v["provider"], "available": v.get("available", False),
+                "free_tier": v.get("free_tier", False),
+            }
             for k, v in MODELS.items() if "implementer" in v["role"]
         ],
     })

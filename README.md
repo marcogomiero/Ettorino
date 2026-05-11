@@ -63,6 +63,8 @@ The router classifies the task difficulty and proposes the optimal model pair. Y
 
 [![Confirm card — difficulty MEDIUM, model selection](https://github.com/marcogomiero/Ettorino/raw/master/docs/screen_confirm.png)](https://github.com/marcogomiero/Ettorino/blob/master/docs/screen_confirm.png)
 
+Models without a configured API key are shown with a `⚠ no key` label and are disabled in the dropdown. If the router's suggested model has no key, Ettorino automatically falls back to the best available model in the same tier — no crash, no silent failure.
+
 ### Parallel execution
 
 On hard tasks, up to 3 implementer workers run simultaneously. Each worker card shows its own live progress bar with token and line counters streaming in real time.

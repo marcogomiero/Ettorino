@@ -178,6 +178,7 @@
     /* accent lines */
     .log-row.lc-claude{border-left-color:var(--red)}
     .log-row.lc-gpt   {border-left-color:var(--green)}
+    .log-row.lc-gemini{border-left-color:#1a73e8}
     .log-row.lc-router{border-left-color:#e08800}
     .log-row.lc-system{border-left-color:var(--border)}
     .log-row.lc-user  {border-left-color:#333}
@@ -187,6 +188,7 @@
     }
     .log-label.lbl-claude{color:var(--red)}
     .log-label.lbl-gpt   {color:var(--green)}
+    .log-label.lbl-gemini{color:#1a73e8}
     .log-label.lbl-router{color:#b86c00}
     .log-label.lbl-system{color:var(--gray)}
     .log-label.lbl-user  {color:#333}
@@ -978,11 +980,12 @@ function scrollFeed(){ window.scrollTo({top:document.body.scrollHeight,behavior:
 
 // ── Log row builder ────────────────────────
 var AGENT_META = {
-  claude: {label:'Claude:',  cls:'claude'},
-  gpt:    {label:'GPT:',     cls:'gpt'},
-  router: {label:'Router:',  cls:'router'},
-  system: {label:'Sistema:', cls:'system'},
-  user:   {label:'Utente:',  cls:'user'},
+  claude:  {label:'Claude:',  cls:'claude'},
+  gpt:     {label:'GPT:',     cls:'gpt'},
+  gemini:  {label:'Gemini:',  cls:'gemini'},
+  router:  {label:'Router:',  cls:'router'},
+  system:  {label:'Sistema:', cls:'system'},
+  user:    {label:'Utente:',  cls:'user'},
 };
 
 function createLogRow(agentKey){
@@ -1075,7 +1078,7 @@ function startStreamBubble(agentKey, modelLabel){
     body.parentNode.insertBefore(prog, body.nextSibling);
     currentProgressEl=prog; currentProgressBar=b; currentProgressLabel=lbl.querySelector('#tok-count');
   }
-  if(agentKey === 'gpt'){
+  if(agentKey === 'gpt' || agentKey === 'gemini'){
     body.style.display='none';
     var gprog=document.createElement('div'); gprog.className='gpt-progress';
     var gbw=document.createElement('div'); gbw.className='gp-bar-wrap';
@@ -1107,14 +1110,14 @@ function appendStream(text){
         currentProgressBar.style.width=Math.min(95,Math.round(thoughts.length/8))+'%';
       }
     } else { html=null; }
-  } else if(currentStreamAgent==='gpt'){
+  } else if(currentStreamAgent==='gpt' || currentStreamAgent==='gemini'){
     if(currentProgressLabel){
       var lines=(currentStreamText.match(/\n/g)||[]).length;
       currentProgressLabel.textContent=currentStreamTokens+' tok · '+lines+' righe';
     }
     html=null;
   } else { html=renderText(currentStreamText); }
-  if(currentStreamAgent!=='gpt')
+  if(currentStreamAgent!=='gpt' && currentStreamAgent!=='gemini')
     currentStreamBody.innerHTML=html||'<div class="typing"><span></span><span></span><span></span></div>';
   scrollFeed();
 }
@@ -1125,7 +1128,7 @@ function endStream(){
     currentProgressBar.classList.add('done');
     currentProgressBar.style.width='100%';
     currentProgressBar.style.animation='none';
-    if(currentStreamAgent==='gpt'){
+    if(currentStreamAgent==='gpt' || currentStreamAgent==='gemini'){
       var lines=(currentStreamText.match(/\n/g)||[]).length;
       if(currentProgressLabel) currentProgressLabel.textContent='✓ '+currentStreamTokens+' tok · '+lines+' righe';
       pendingChipsEl=currentGptChipsEl;
@@ -1164,30 +1167,47 @@ function showConfirmCard(d){
   var card = document.createElement('div');
   card.className = 'confirm-card';
 
+  // ── Reasoner options — anthropic only, no-key disables ──────────────────
   var _reasonerOpts = d.available_reasoners.map(function(m){
-    return '<option value="'+m.id+'" '+(m.id===d.reasoner_model?'selected':'')+'>'
-      +m.label+' ['+m.tier+']</option>';
+    var noKey = !m.available;
+    var label = m.label + ' [' + m.tier + ']' + (noKey ? ' ⚠ no key' : '');
+    return '<option value="' + m.id + '" '
+      + (m.id === d.reasoner_model ? 'selected' : '')
+      + (noKey ? ' disabled' : '')
+      + '>' + label + '</option>';
   }).join('');
 
-  var anthropicImpl = d.available_implementers.filter(function(m){return m.provider==='anthropic';});
-  var openaiImpl    = d.available_implementers.filter(function(m){return m.provider==='openai';});
-  var _implOpts='';
-  if(anthropicImpl.length){
-    _implOpts+='<optgroup label="── Anthropic ──">';
-    _implOpts+=anthropicImpl.map(function(m){
-      return '<option value="'+m.id+'" '+(m.id===d.implementer_model?'selected':'')+'>'
-        +m.label+' ['+m.tier+']</option>';
+  // ── Implementer options — grouped by provider, no-key disables ───────────
+  var providerGroups = [
+    {key:'anthropic', label:'── Anthropic ──'},
+    {key:'openai',    label:'── OpenAI ──'},
+    {key:'google',    label:'── Google Gemini ──'},
+  ];
+  var _implOpts = '';
+  providerGroups.forEach(function(pg){
+    var group = d.available_implementers.filter(function(m){ return m.provider === pg.key; });
+    if(!group.length) return;
+    _implOpts += '<optgroup label="' + pg.label + '">';
+    _implOpts += group.map(function(m){
+      var noKey   = !m.available;
+      var freeBadge = m.free_tier ? ' ★free' : '';
+      var label   = m.label + ' [' + m.tier + ']' + freeBadge + (noKey ? ' ⚠ no key' : '');
+      return '<option value="' + m.id + '" '
+        + (m.id === d.implementer_model ? 'selected' : '')
+        + (noKey ? ' disabled' : '')
+        + '>' + label + '</option>';
     }).join('');
-    _implOpts+='</optgroup>';
-  }
-  if(openaiImpl.length){
-    _implOpts+='<optgroup label="── OpenAI ──">';
-    _implOpts+=openaiImpl.map(function(m){
-      return '<option value="'+m.id+'" '+(m.id===d.implementer_model?'selected':'')+'>'
-        +m.label+' ['+m.tier+']</option>';
-    }).join('');
-    _implOpts+='</optgroup>';
-  }
+    _implOpts += '</optgroup>';
+  });
+
+  // ── No-key warning banner (shown if suggested model has no key) ──────────
+  var suggestedImplMeta = d.available_implementers.find(function(m){ return m.id === d.implementer_model; });
+  var noKeyWarn = (suggestedImplMeta && !suggestedImplMeta.available)
+    ? '<div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:6px;padding:5px 9px;font-size:.7rem;color:#92400e;margin-bottom:.5rem">'
+      + '⚠ Il modello suggerito (<strong>' + d.implementer_model + '</strong>) non ha una chiave API — '
+      + 'è stato selezionato un fallback disponibile. Aggiorna il .env per usarlo.'
+      + '</div>'
+    : '';
 
   var _rat = d.model_rationale
     ? '<div class="rationale">'+d.model_rationale+'</div>' : '';
@@ -1200,6 +1220,7 @@ function showConfirmCard(d){
     '<div class="cc-row" style="margin-top:.3rem"><span class="cc-key">Stima costo</span>'+
     '<span class="cost-est">~'+fmt(d.estimated_cost)+'</span></div>'+
     '<div class="cc-cols" style="margin-top:.6rem"><span>'+t('confirmReasoner')+'</span><span>'+t('confirmImpl')+'</span></div>'+
+    noKeyWarn+
     '<div class="model-selects">'+
     '<select id="selReasoner" onchange="checkSameModel()">'+_reasonerOpts+'</select>'+
     '<select id="selImplementer" onchange="checkSameModel()">'+_implOpts+'</select>'+
@@ -1461,20 +1482,21 @@ function handleEvent(type,d){
     case 'agent_start':
       if(d.agent==='router') setStatus(t('statusClassifying'));
       else setStatus((d.label||'')+(d.model?' · '+d.model:'')+' '+t('statusRunning'));
-      if(isParallel && d.agent==='gpt') break;  // workers use parallel dashboard
+      if(isParallel && (d.agent==='gpt'||d.agent==='gemini')) break;  // workers use parallel dashboard
       startStreamBubble(d.agent, d.model||null);
       break;
     case 'agent_chunk':
-      if(isParallel && d.agent==='gpt') break;
+      if(isParallel && (d.agent==='gpt'||d.agent==='gemini')) break;
       appendStream(d.text); break;
     case 'agent_end':
-      if(isParallel && d.agent==='gpt') break;
+      if(isParallel && (d.agent==='gpt'||d.agent==='gemini')) break;
       endStream(); break;
     case 'cost_update':{
       var p=d.provider;
       if(p==='anthropic'){costs.anthropic.cost+=d.call_cost||0;costs.anthropic.tokens+=(d.input_tokens||0)+(d.output_tokens||0);}
+      else if(p==='google'){costs.google=(costs.google||{cost:0,tokens:0});costs.google.cost+=d.call_cost||0;costs.google.tokens+=(d.input_tokens||0)+(d.output_tokens||0);}
       else{costs.openai.cost+=d.call_cost||0;costs.openai.tokens+=(d.input_tokens||0)+(d.output_tokens||0);}
-      costs.total=d.total_cost||costs.anthropic.cost+costs.openai.cost;
+      costs.total=d.total_cost||costs.anthropic.cost+costs.openai.cost+(costs.google?.cost||0);
       updateCostBar(); break;}
     case 'confirm_models':
       setStatus(t('statusWaiting'));
