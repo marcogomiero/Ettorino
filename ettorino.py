@@ -30,20 +30,13 @@ app = Flask(__name__)
 
 # ─────────────────────────────────────────────
 # API KEY AVAILABILITY — rilevata al boot
-# Setta available=True/False su ogni modello in base alle chiavi .env
 # ─────────────────────────────────────────────
 def _detect_available_keys() -> dict[str, bool]:
-    """Ritorna quali provider hanno una chiave API valida (non vuota).
-    La chiave è sufficiente per mostrare i modelli nell'UI e abilitarli.
-    Il controllo su GOOGLE_AVAILABLE (SDK installato) avviene solo al momento
-    della chiamata effettiva in get_google_client(), con messaggio d'errore chiaro."""
     return {
         "anthropic": bool(os.environ.get("ANTHROPIC_API_KEY", "").strip()),
         "openai":    bool(os.environ.get("OPENAI_API_KEY",    "").strip()),
         "google":    bool(os.environ.get("GOOGLE_API_KEY",    "").strip()),
     }
-
-# Chiamato una volta alla fine della definizione di MODELS (vedi sotto)
 
 WORKSPACE   = Path("workspace")
 MEMORY_PATH = Path("MEMORY.md")
@@ -53,8 +46,6 @@ WORKSPACE.mkdir(exist_ok=True)
 # MEMORY — legge MEMORY.md e inietta in Claude
 # ─────────────────────────────────────────────
 def load_memory() -> str:
-    """Legge MEMORY.md e restituisce il contenuto rilevante per Claude.
-    Ritorna stringa vuota se il file non esiste o è vuoto."""
     if not MEMORY_PATH.exists():
         return ""
     raw = MEMORY_PATH.read_text(encoding="utf-8").strip()
@@ -63,20 +54,15 @@ def load_memory() -> str:
     return f"\n\n─── MEMORY (istruzioni persistenti) ───\n{raw}\n───────────────────────────────────────"
 
 def append_to_memory(section: str, item: str) -> bool:
-    """Aggiunge un item bullet a una sezione di MEMORY.md.
-    Crea il file se non esiste. Ritorna True se ok."""
     try:
         text = MEMORY_PATH.read_text(encoding="utf-8") if MEMORY_PATH.exists() else ""
         header = f"## {section}"
         if header in text:
-            # Inserisce dopo l'header della sezione
             idx = text.index(header) + len(header)
-            # Salta eventuali righe vuote dopo l'header
             while idx < len(text) and text[idx] in ("\n", " "):
                 idx += 1
             text = text[:idx] + f"\n- {item}\n" + text[idx:]
         else:
-            # Aggiunge la sezione in fondo
             text = text.rstrip() + f"\n\n{header}\n\n- {item}\n"
         MEMORY_PATH.write_text(text, encoding="utf-8")
         return True
@@ -147,7 +133,6 @@ MODELS = {
         "output_cost": 60.00,
     },
     # ── Google Gemini — implementer only ─────────────────────────────────
-    # Gemini 2.5 (stable, produzione) — free tier disponibile su flash/flash-lite
     "gemini-2.5-flash-lite": {
         "provider": "google",
         "label": "Gemini 2.5 Flash-Lite",
@@ -175,7 +160,6 @@ MODELS = {
         "output_cost": 10.00,
         "free_tier": False,
     },
-    # Gemini 3 / 3.1 (generazione più recente) — solo paid
     "gemini-3-flash-preview": {
         "provider": "google",
         "label": "Gemini 3 Flash",
@@ -205,7 +189,6 @@ MODELS = {
     },
 }
 
-# ── Stampa available=True/False su ogni modello in base alle chiavi .env ──
 def _stamp_model_availability():
     keys = _detect_available_keys()
     for m in MODELS.values():
@@ -219,7 +202,6 @@ TIER_MODELS = {
     "hard":     {"reasoner": "claude-opus-4-7",    "implementer": "o3"},
 }
 
-# Esegui subito — da qui in poi tutti i MODELS hanno il campo "available"
 _stamp_model_availability()
 
 # State globale sessioni
@@ -229,6 +211,90 @@ human_responses = {}
 model_overrides = {}  # session_id → {"reasoner": ..., "implementer": ...}
 session_state   = {}  # session_id → {"code": str, "task": str, ...}
 stop_flags      = {}  # session_id → bool
+
+# ─────────────────────────────────────────────
+# SESSION LOGGER
+# Scrive workspace/logs/<session_id>.md con tutti gli output testuali
+# ─────────────────────────────────────────────
+LOGS_DIR = WORKSPACE / "logs"
+LOGS_DIR.mkdir(exist_ok=True)
+
+class SessionLogger:
+    """Scrive un file .md per ogni sessione, in append incrementale."""
+
+    def __init__(self, session_id: str, task: str) -> None:
+        self.path: Path = LOGS_DIR / f"{session_id}.md"
+        self._lock = threading.Lock()
+        ts = time.strftime("%Y-%m-%d %H:%M:%S")
+        header = (
+            f"# Ettorino — Session `{session_id}`\n\n"
+            f"**Avviato:** {ts}  \n"
+            f"**Task:** {task}\n\n"
+            f"---\n\n"
+        )
+        self.path.write_text(header, encoding="utf-8")
+
+    def _append(self, text: str) -> None:
+        with self._lock:
+            with self.path.open("a", encoding="utf-8") as f:
+                f.write(text)
+
+    def log_agent_output(self, agent: str, model_label: str, text: str) -> None:
+        """Output testuale completo di un agente (dopo agent_end)."""
+        labels = {
+            "router": "🔀 Router",
+            "claude": "🧠 Claude (Reasoner)",
+            "gpt":    "⚙️ Implementer (GPT)",
+            "gemini": "⚙️ Implementer (Gemini)",
+        }
+        label = labels.get(agent, agent.capitalize())
+        block = (
+            f"## {label}"
+            + (f" · `{model_label}`" if model_label else "")
+            + f"\n\n{text.strip()}\n\n---\n\n"
+        )
+        self._append(block)
+
+    def log_iteration(self, n: int, max_iter: int) -> None:
+        self._append(f"### Iterazione {n} / {max_iter}\n\n")
+
+    def log_user_question(self, question: str) -> None:
+        self._append(f"**❓ Domanda all'utente:** {question.strip()}\n\n")
+
+    def log_user_answer(self, answer: str) -> None:
+        self._append(f"**👤 Risposta utente:** {answer.strip()}\n\n")
+
+    def log_parallel_start(self, chunks: list) -> None:
+        titles = ", ".join(f"`{ch['id']}` {ch['title']}" for ch in chunks)
+        self._append(f"### ⚡ Parallel workers: {titles}\n\n")
+
+    def log_parallel_chunk(self, chunk_id: str, title: str, code: str) -> None:
+        self._append(
+            f"#### Chunk {chunk_id}" + (f" — {title}" if title else "") + "\n\n"
+            f"```\n{code.strip()}\n```\n\n"
+        )
+
+    def log_end(self, success: bool, summary: str, total_cost: float,
+                by_model: dict, iterations: int) -> None:
+        status = "✅ Completato" if success else "❌ Non completato"
+        cost_lines = "\n".join(
+            f"  - `{mid}`: ${v['cost']:.4f} ({v['tokens']} tok)"
+            for mid, v in by_model.items()
+        )
+        block = (
+            f"## {status}\n\n"
+            f"**Riepilogo:** {summary}\n\n"
+            f"**Iterazioni:** {iterations}  \n"
+            f"**Costo totale:** ${total_cost:.4f}\n\n"
+            f"**Breakdown per modello:**\n{cost_lines}\n\n"
+            f"---\n\n"
+            f"*Fine sessione — {time.strftime('%Y-%m-%d %H:%M:%S')}*\n"
+        )
+        self._append(block)
+
+
+# Dict globale: session_id → SessionLogger
+session_loggers: dict[str, "SessionLogger"] = {}
 
 # ─────────────────────────────────────────────
 # HELPERS
@@ -253,33 +319,19 @@ def get_openai_client():
     return openai.OpenAI(api_key=key, http_client=_make_http_client())
 
 def get_google_client():
-    """Restituisce un client Google Gemini configurato.
-    Patcha il client httpx interno dopo la costruzione per bypassare
-    la verifica SSL dei proxy aziendali con certificati self-signed."""
     if not GOOGLE_AVAILABLE:
         raise ValueError("Libreria google-genai non installata. Esegui: pip install google-genai")
     key = os.environ.get("GOOGLE_API_KEY")
     if not key:
         raise ValueError("GOOGLE_API_KEY mancante nel .env")
-
     client = google_genai.Client(api_key=key)
-
-    # Il SDK google-genai costruisce internamente un httpx.Client.
-    # Lo rimpiazziamo con uno identico ma con verify=False per bypassare
-    # i certificati self-signed dei proxy aziendali.
     no_ssl_transport = httpx.HTTPTransport(verify=False)
-    no_ssl_client = httpx.Client(
-        transport=no_ssl_transport,
-        verify=False,
-        timeout=120.0,
-    )
+    no_ssl_client = httpx.Client(transport=no_ssl_transport, verify=False, timeout=120.0)
     try:
-        # Percorso interno: client._api_client._httpx_client
         if hasattr(client, '_api_client') and hasattr(client._api_client, '_httpx_client'):
             client._api_client._httpx_client = no_ssl_client
     except Exception:
-        pass  # se la struttura interna cambia, peggio per il SSL — almeno non crasha
-
+        pass
     return client
 
 def estimate_tokens(text: str) -> int:
@@ -321,10 +373,6 @@ def wait_for_human(session_id: str, timeout: int = 300) -> str | None:
 # ─────────────────────────────────────────────
 def _gemini_generate(google_client, model_id: str, system: str, prompt: str,
                      max_tok: int, agent_key: str, q: queue.Queue) -> tuple[str, int, int, bool]:
-    """
-    Chiama Gemini con streaming e restituisce (full_code, input_tok, output_tok, truncated).
-    Claude resta orchestratore — Gemini è solo implementer.
-    """
     full_code = ""
     truncated = False
 
@@ -345,7 +393,6 @@ def _gemini_generate(google_client, model_id: str, system: str, prompt: str,
             full_code += chunk.text
             emit(q, "agent_chunk", {"agent": agent_key, "text": chunk.text})
 
-    # usage metadata (disponibile sull'ultimo chunk via response.usage_metadata)
     try:
         usage = response.usage_metadata if hasattr(response, 'usage_metadata') else None
         input_tok = usage.prompt_token_count if usage else estimate_tokens(system + prompt)
@@ -354,10 +401,7 @@ def _gemini_generate(google_client, model_id: str, system: str, prompt: str,
         input_tok = estimate_tokens(system + prompt)
         output_tok = estimate_tokens(full_code)
 
-    # Gemini non ha un flag "length" esplicito nello streaming; stima troncamento
-    # se l'output è vicino al limite (>95% dei max_tok stimati)
     truncated = output_tok >= int(max_tok * 0.95)
-
     return full_code, input_tok, output_tok, truncated
 
 # ─────────────────────────────────────────────
@@ -371,7 +415,7 @@ def classify_task(client: anthropic.Anthropic, session_id: str, task: str,
         emit(q, "agent_start", {"agent": "router", "label": "Router"})
         emit(q, "agent_chunk", {"agent": "router", "text": "Analizzo il task..."})
 
-    system = """Sei il router intelligente di Ettorino, un assistente agente Claude×GPT×Gemini.
+    system = """Sei il router intelligente di Ettorino, un assistente agente Claude x GPT x Gemini.
 Il tuo compito è analizzare il task dell'utente e decidere:
 1. La difficoltà: easy / medium / hard-mid / hard
 2. I modelli migliori per massimizzare qualità e minimizzare costi
@@ -385,17 +429,10 @@ Criteri difficoltà:
 - hard: sistemi molto complessi, ML/AI, architetture multi-file, algoritmi avanzati, > 600 righe
 
 Modelli implementer disponibili:
-OpenAI:
-- gpt-4.1-mini (easy, economico)
-- gpt-4.1 (medium, qualità/prezzo ottimale)
-- o3 (hard, ragionamento avanzato)
-Google Gemini (contesto 1M token su tutti):
-- gemini-2.5-flash-lite (easy, FREE tier, $0.10/1M input — il più economico)
-- gemini-2.5-flash (medium, FREE tier, $0.30/1M input — ottimo per codice)
-- gemini-2.5-pro (hard-mid, PAID only, $1.25/1M — codebase grandi)
-- gemini-3-flash-preview (medium, PAID, $0.50/1M — generazione nuova)
-- gemini-3.1-flash-lite-preview (easy, PAID, $0.25/1M — gen 3 economico)
-- gemini-3.1-pro-preview (hard, PAID, $2.00/1M — flagship Google)
+OpenAI: gpt-4.1-mini (easy), gpt-4.1 (medium), o3 (hard)
+Google Gemini: gemini-2.5-flash-lite (easy, FREE), gemini-2.5-flash (medium, FREE),
+               gemini-2.5-pro (hard-mid), gemini-3-flash-preview (medium),
+               gemini-3.1-flash-lite-preview (easy), gemini-3.1-pro-preview (hard)
 Preferisci Gemini per task con contesto elevato o quando il costo è prioritario.
 
 Suggerisci sempre il modello più adatto al task specifico.
@@ -484,7 +521,7 @@ REVIEW PARALLELA: Quando ricevi codice da chunk multipli (=== CHUNK A ===, ecc.)
 4. Se tutto coerente → status "done"
 5. Se ci sono problemi → status "fix" con feedback specifico per chunk
 
-FILE NEL WORKSPACE: Se vedi "FILE GIÀ PRESENTI NEL WORKSPACE", quei file esistono su disco.
+FILE NEL WORKSPACE: Se vedi "FILE GIA PRESENTI NEL WORKSPACE", quei file esistono su disco.
 NON chiedere all'utente di fornirli, NON usare status "ask" per ottenerli.
 
 Rispondi SOLO con JSON valido:
@@ -590,14 +627,12 @@ def run_implementer(anthropic_client: anthropic.Anthropic, openai_client: openai
 
     provider = MODELS.get(model_id, {}).get("provider", "openai")
 
-    # Fallback se modello non disponibile
     if not MODELS.get(model_id, {}).get("available", True):
         fallback = "gpt-4.1" if provider == "openai" else "claude-sonnet-4-6"
         emit(q, "agent_chunk", {"agent": "gpt", "text": f"⚠ {MODELS[model_id]['label']} non disponibile — fallback a {fallback}"})
         model_id = fallback
         provider = MODELS[model_id]["provider"]
 
-    # Google Gemini: controlla disponibilità SDK
     if provider == "google" and not GOOGLE_AVAILABLE:
         emit(q, "agent_chunk", {"agent": "gpt", "text": "⚠ google-genai non installato — fallback a gpt-4.1"})
         model_id = "gpt-4.1"
@@ -606,14 +641,14 @@ def run_implementer(anthropic_client: anthropic.Anthropic, openai_client: openai
     agent_key = "claude" if provider == "anthropic" else ("gemini" if provider == "google" else "gpt")
     emit(q, "agent_start", {"agent": agent_key, "label": "Implementer", "model": MODELS[model_id]["label"]})
 
-    system = """Sei l'Implementer di Ettorino. Il tuo ruolo è:
+    system = """Sei l'Implementer di Ettorino. Il tuo ruolo e':
 1. Implementare ESATTAMENTE le specifiche che ti fornisce il Reasoner Claude
-2. NON aggiungere funzionalità non richieste
-3. NON omettere nulla di ciò che è nelle spec
+2. NON aggiungere funzionalita' non richieste
+3. NON omettere nulla di cio' che e' nelle spec
 4. Scrivere codice pulito, commentato, immediatamente eseguibile
 
 FORMATO OUTPUT — OBBLIGATORIO:
-Se il progetto ha più file, usa SEMPRE questo formato:
+Se il progetto ha piu' file, usa SEMPRE questo formato:
 
 ### FILE: percorso/relativo/file.py
 (codice completo del file)
@@ -621,7 +656,7 @@ Se il progetto ha più file, usa SEMPRE questo formato:
 ### FILE: altro/file.py
 (codice completo)
 
-Se è un singolo file, scrivi solo il codice Python puro senza intestazione FILE.
+Se e' un singolo file, scrivi solo il codice Python puro senza intestazione FILE.
 Ogni file deve essere COMPLETO. Non troncare MAI il codice."""
 
     prompt = f"SPECIFICHE DA IMPLEMENTARE:\n{spec}"
@@ -637,14 +672,12 @@ Ogni file deve essere COMPLETO. Non troncare MAI il codice."""
     input_tok = estimate_tokens(system + prompt)
     output_tok = 0
 
-    # ── GOOGLE GEMINI ──────────────────────────────────────────────────────
+    # ── GOOGLE GEMINI ─────────────────────────────────────────────────────
     if provider == "google":
         google_client = get_google_client()
         full_code, input_tok, output_tok, truncated = _gemini_generate(
             google_client, model_id, system, prompt, max_tok, agent_key, q
         )
-
-        # Auto-continuazione Gemini
         MAX_CONT = 3
         cont = 0
         while truncated and cont < MAX_CONT:
@@ -659,7 +692,7 @@ Ogni file deve essere COMPLETO. Non troncare MAI il codice."""
             input_tok += it
             output_tok += ot
 
-    # ── ANTHROPIC (Claude come implementer) ───────────────────────────────
+    # ── ANTHROPIC (Claude come implementer) ──────────────────────────────
     elif provider == "anthropic":
         with anthropic_client.messages.stream(
             model=model_id,
@@ -682,9 +715,7 @@ Ogni file deve essere COMPLETO. Non troncare MAI il codice."""
             emit(q, "agent_chunk", {"agent": agent_key,
                 "text": f"\n\n[⚠ output troncato — continuo ({cont}/{MAX_CONT})...]\n"})
             with anthropic_client.messages.stream(
-                model=model_id,
-                max_tokens=max_tok,
-                system=system,
+                model=model_id, max_tokens=max_tok, system=system,
                 messages=[
                     {"role": "user", "content": prompt},
                     {"role": "assistant", "content": full_code},
@@ -705,8 +736,7 @@ Ogni file deve essere COMPLETO. Non troncare MAI il codice."""
     else:
         if model_id == "o3":
             response = openai_client.chat.completions.create(
-                model=model_id,
-                max_completion_tokens=max_tok,
+                model=model_id, max_completion_tokens=max_tok,
                 messages=[
                     {"role": "system", "content": system},
                     {"role": "user", "content": prompt}
@@ -719,9 +749,7 @@ Ogni file deve essere COMPLETO. Non troncare MAI il codice."""
             emit(q, "agent_chunk", {"agent": agent_key, "text": full_code})
         else:
             stream = openai_client.chat.completions.create(
-                model=model_id,
-                max_tokens=max_tok,
-                stream=True,
+                model=model_id, max_tokens=max_tok, stream=True,
                 stream_options={"include_usage": True},
                 messages=[
                     {"role": "system", "content": system},
@@ -798,7 +826,7 @@ Ogni file deve essere COMPLETO. Non troncare MAI il codice."""
     })
     emit(q, "agent_end", {"agent": agent_key})
 
-    # ── Salva output ──────────────────────────────────────────────────────
+    # ── Salva output ─────────────────────────────────────────────────────
     import re as _re, time as _t
     words = _re.findall(r"[a-zA-Z]+", task)[:3]
     slug = "_".join(w.lower() for w in words) or "task"
@@ -844,7 +872,6 @@ def run_implementer_parallel(anthropic_client: anthropic.Anthropic, openai_clien
     chunk_errors  = {}
     provider = MODELS.get(model_id, {}).get("provider", "openai")
 
-    # Fallback Google se SDK mancante
     if provider == "google" and not GOOGLE_AVAILABLE:
         emit(q, "agent_chunk", {"agent": "gpt", "text": "⚠ google-genai non disponibile — fallback a gpt-4.1 per i chunk"})
         model_id = "gpt-4.1"
@@ -864,7 +891,7 @@ def run_implementer_parallel(anthropic_client: anthropic.Anthropic, openai_clien
 
         system = (
             "Sei l'Implementer parallelo di Ettorino.\n"
-            "Stai implementando UN SOLO chunk di un progetto più grande.\n"
+            "Stai implementando UN SOLO chunk di un progetto piu' grande.\n"
             "Altri worker stanno implementando gli altri chunk in parallelo.\n\n"
             "FORMATO OUTPUT — OBBLIGATORIO:\n"
             "### FILE: percorso/relativo/file.py\n"
@@ -882,7 +909,6 @@ def run_implementer_parallel(anthropic_client: anthropic.Anthropic, openai_clien
         input_tok_c = output_tok_c = 0
 
         try:
-            # ── Google Gemini worker ──────────────────────────────────────
             if provider == "google":
                 google_client = get_google_client()
                 full_code, input_tok_c, output_tok_c, truncated = _gemini_generate(
@@ -901,7 +927,6 @@ def run_implementer_parallel(anthropic_client: anthropic.Anthropic, openai_clien
                     input_tok_c += it
                     output_tok_c += ot
 
-            # ── Anthropic worker ──────────────────────────────────────────
             elif provider == "anthropic":
                 with anthropic_client.messages.stream(
                     model=model_id, max_tokens=max_tok, system=system,
@@ -936,7 +961,6 @@ def run_implementer_parallel(anthropic_client: anthropic.Anthropic, openai_clien
                         truncated     = (fc.stop_reason == "max_tokens")
                     full_code += ct
 
-            # ── OpenAI worker ─────────────────────────────────────────────
             else:
                 if model_id == "o3":
                     resp = openai_client.chat.completions.create(
@@ -1094,7 +1118,7 @@ def get_project_files_summary(task: str, include_content: bool = True, max_file_
     files = sorted(f for f in proj_dir.rglob("*") if f.is_file())
     if not files:
         return ""
-    lines = [f"\n\nFILE GIÀ PRESENTI NEL WORKSPACE ({proj_dir}) — NON chiedere questi file all'utente:"]
+    lines = [f"\n\nFILE GIA PRESENTI NEL WORKSPACE ({proj_dir}) — NON chiedere questi file all'utente:"]
     text_exts = {".py", ".js", ".ts", ".html", ".css", ".json", ".yaml", ".yml",
                  ".toml", ".txt", ".md", ".sh", ".env", ".cfg", ".ini", ".xml"}
     for f in files:
@@ -1113,34 +1137,28 @@ def get_project_files_summary(task: str, include_content: bool = True, max_file_
 
 # ─────────────────────────────────────────────
 # RIFLESSIONE POST-SESSIONE
-# Claude suggerisce cosa aggiungere a MEMORY.md
 # ─────────────────────────────────────────────
-REFLECT_MODEL = "claude-haiku-4-5"  # economico, basta per la riflessione
+REFLECT_MODEL = "claude-haiku-4-5"
 
 def claude_reflect(client: anthropic.Anthropic, session_id: str,
                    task: str, iterations: int, had_fixes: bool,
                    q: queue.Queue):
-    """Chiamata leggera post-loop: Claude suggerisce bullet points per MEMORY.md.
-    Emette reflect_suggestions con lista di suggerimenti da approvare uno per uno."""
-
-    # Non riflettere se è andato liscio al primo colpo senza fix
     if iterations <= 1 and not had_fixes:
         return
 
     emit(q, "reflect_start", {})
 
     system = """Sei il sistema di memoria di Ettorino.
-Hai appena completato un task di coding. Il tuo compito è identificare
+Hai appena completato un task di coding. Il tuo compito e' identificare
 1-3 lezioni concrete da ricordare per i task futuri.
 
 Concentrati SOLO su cose SPECIFICHE e AZIONABILI:
 - Pattern che hanno funzionato bene
-- Errori fatti dall\'implementer che si potrebbero prevenire con istruzioni migliori
+- Errori fatti dall'implementer che si potrebbero prevenire con istruzioni migliori
 - Convenzioni o strutture da riusare
 
-NON suggerire ovvietà generiche ("testa sempre il codice", "scrivi commenti").
-NON suggerire più di 3 items.
-Se non c\'è nulla di veramente utile da ricordare, rispondi con lista vuota.
+NON suggerire ovvieta' generiche. NON suggerire piu' di 3 items.
+Se non c'e' nulla di veramente utile, rispondi con lista vuota.
 
 Rispondi SOLO con JSON valido:
 {
@@ -1158,7 +1176,7 @@ Sezioni disponibili: "Preferenze", "Pattern che funzionano", "Errori da non ripe
     user_msg = f"""Task completato: {task}
 
 Iterazioni necessarie: {iterations}
-Fix richiesti durante il loop: {"sì" if had_fixes else "no"}
+Fix richiesti durante il loop: {"si'" if had_fixes else "no"}
 
 Cosa vale la pena ricordare per i task futuri?"""
 
@@ -1197,6 +1215,17 @@ Cosa vale la pena ricordare per i task futuri?"""
         emit(q, "reflect_end", {"reason": f"error: {e}"})
 
 # ─────────────────────────────────────────────
+# HELPER — agent_key per log
+# ─────────────────────────────────────────────
+def _agent_key_for_log(model_id: str) -> str:
+    provider = MODELS.get(model_id, {}).get("provider", "openai")
+    if provider == "anthropic":
+        return "claude"
+    if provider == "google":
+        return "gemini"
+    return "gpt"
+
+# ─────────────────────────────────────────────
 # MAIN LOOP
 # ─────────────────────────────────────────────
 def run_agent_loop(session_id: str, task: str, q: queue.Queue):
@@ -1210,8 +1239,20 @@ def run_agent_loop(session_id: str, task: str, q: queue.Queue):
     session_costs[session_id] = {"total": 0.0, "by_model": {}}
     emit(q, "loop_start", {"task": task})
 
+    # ── Inizializza session logger ──────────────
+    session_loggers[session_id] = SessionLogger(session_id, task)
+    _slog = session_loggers[session_id]
+
     # ── FASE 0: classifica ──────────────────────
     classification = classify_task(claude_client, session_id, task, q)
+    _slog.log_agent_output(
+        "router", MODELS[CLASSIFIER_MODEL]["label"],
+        f"**Difficolta:** {classification.get('difficulty', '?')}  \n"
+        f"**Reasoning:** {classification.get('reasoning', '')}  \n"
+        f"**Reasoner suggerito:** {classification.get('suggested_reasoner', '')}  \n"
+        f"**Implementer suggerito:** {classification.get('suggested_implementer', '')}  \n"
+        f"**Stima costo:** ${classification.get('estimated_cost_usd', 0):.4f}"
+    )
 
     difficulty             = classification.get("difficulty", "medium")
     suggested_reasoner     = classification.get("suggested_reasoner", TIER_MODELS["medium"]["reasoner"])
@@ -1229,11 +1270,13 @@ def run_agent_loop(session_id: str, task: str, q: queue.Queue):
             "session_id": session_id,
             "context": "clarification"
         })
+        _slog.log_user_question(clarification_question)
         clarification = wait_for_human(session_id, timeout=300)
         if clarification is None:
             emit(q, "timeout", {})
             return
         emit(q, "human_response", {"text": clarification})
+        _slog.log_user_answer(clarification)
         task = f"{task}\n\nChiarimento dell'utente: {clarification}"
         classification        = classify_task(claude_client, session_id, task, q, silent=True)
         difficulty            = classification.get("difficulty", "medium")
@@ -1248,14 +1291,11 @@ def run_agent_loop(session_id: str, task: str, q: queue.Queue):
     reasoner_model    = override.get("reasoner", suggested_reasoner)
     implementer_model = override.get("implementer", suggested_implementer)
 
-    # ── Fallback automatico se il modello suggerito non ha chiave ──────────
     def _best_available(model_id: str, role: str) -> str:
-        """Se model_id non è disponibile, ritorna il miglior fallback disponibile dello stesso tier."""
         if MODELS.get(model_id, {}).get("available", False):
             return model_id
         tier = MODELS.get(model_id, {}).get("tier", "medium")
         tier_order = ["easy", "medium", "hard-mid", "hard"]
-        # cerca prima stesso tier, poi tier adiacenti
         for t in [tier] + [x for x in tier_order if x != tier]:
             candidates = [
                 k for k, v in MODELS.items()
@@ -1263,7 +1303,7 @@ def run_agent_loop(session_id: str, task: str, q: queue.Queue):
             ]
             if candidates:
                 return candidates[0]
-        return model_id  # nessun fallback trovato: torna l'originale (sarà segnalato come no-key)
+        return model_id
 
     reasoner_model    = _best_available(reasoner_model,    "reasoner")
     implementer_model = _best_available(implementer_model, "implementer")
@@ -1316,16 +1356,19 @@ def run_agent_loop(session_id: str, task: str, q: queue.Queue):
     # ── LOOP PRINCIPALE ────────────────────────
     context       = "Nessun codice ancora prodotto. Prima iterazione."
     code          = ""
-    feedback      = ""
     iteration     = 0
     max_iterations = int(os.environ.get("MAX_ITERATIONS", 10))
 
     while iteration < max_iterations:
         iteration += 1
         emit(q, "iteration_start", {"n": iteration, "max": max_iterations})
+        _slog.log_iteration(iteration, max_iterations)
 
         if stop_flags.get(session_id):
             stop_flags.pop(session_id, None)
+            _slog.log_end(False, "Interrotto dall'utente.",
+                          session_costs[session_id]["total"],
+                          session_costs[session_id]["by_model"], iteration)
             emit(q, "loop_end", {
                 "success": False, "summary": "Interrotto dall'utente.",
                 "iterations": iteration,
@@ -1342,21 +1385,26 @@ def run_agent_loop(session_id: str, task: str, q: queue.Queue):
             "status": status, "thoughts": result.get("thoughts", ""),
             "alignment": alignment, "iteration": iteration,
         })
+        _slog.log_agent_output(
+            "claude", MODELS[reasoner_model]["label"],
+            result.get("thoughts", "") or result.get("spec", "") or result.get("summary", "")
+        )
 
         if status == "done":
             total = session_costs[session_id]["total"]
-            had_fixes = iteration > 1  # almeno un ciclo di fix
+            had_fixes = iteration > 1
             session_state[session_id] = {
                 "code": code, "task": task,
                 "reasoner": reasoner_model, "implementer": implementer_model,
                 "iteration": iteration,
             }
+            _slog.log_end(True, result.get("summary", ""), total,
+                          session_costs[session_id]["by_model"], iteration)
             emit(q, "loop_end", {
                 "success": True, "summary": result.get("summary", ""),
                 "iterations": iteration, "total_cost": total,
                 "by_model": session_costs[session_id]["by_model"],
             })
-            # Riflessione post-sessione (asincrona rispetto al done banner)
             claude_reflect(claude_client, session_id, task, iteration, had_fixes, q)
             return
 
@@ -1364,11 +1412,13 @@ def run_agent_loop(session_id: str, task: str, q: queue.Queue):
             emit(q, "waiting_human", {
                 "question": result.get("question", ""), "session_id": session_id, "context": "loop"
             })
+            _slog.log_user_question(result.get("question", ""))
             human_resp = wait_for_human(session_id, timeout=int(os.environ.get("HUMAN_TIMEOUT", 300)))
             if human_resp is None:
                 emit(q, "timeout", {})
                 return
             emit(q, "human_response", {"text": human_resp})
+            _slog.log_user_answer(human_resp)
             context = f"Codice attuale:\n{code}\n\nRisposta utente: {human_resp}"
 
         elif status == "implement":
@@ -1376,6 +1426,8 @@ def run_agent_loop(session_id: str, task: str, q: queue.Queue):
             emit(q, "spec_ready", {"spec": spec})
             code = run_implementer(claude_client, openai_client, session_id, task, spec, "",
                                    iteration, implementer_model, q)
+            _slog.log_agent_output(_agent_key_for_log(implementer_model),
+                                   MODELS[implementer_model]["label"], code)
             context = (f"Codice prodotto (iterazione {iteration}):\n```python\n{code}\n```\n"
                        + get_project_files_summary(task)
                        + "\nVerifica correttezza e completezza rispetto al task originale.")
@@ -1387,11 +1439,18 @@ def run_agent_loop(session_id: str, task: str, q: queue.Queue):
                 emit(q, "spec_ready", {"spec": spec})
                 code = run_implementer(claude_client, openai_client, session_id, task, spec, "",
                                        iteration, implementer_model, q)
+                _slog.log_agent_output(_agent_key_for_log(implementer_model),
+                                       MODELS[implementer_model]["label"], code)
             else:
+                _slog.log_parallel_start(chunks)
                 chunk_results = run_implementer_parallel(
                     claude_client, openai_client, session_id, task,
                     chunks, iteration, implementer_model, q
                 )
+                for cid in sorted(chunk_results.keys()):
+                    ch_title = next((ch["title"] for ch in chunks if ch["id"] == cid), "")
+                    _slog.log_parallel_chunk(cid, ch_title, chunk_results.get(cid, ""))
+
                 import re as _re2
                 chunk_summaries = []
                 for cid in sorted(chunk_results.keys()):
@@ -1417,7 +1476,7 @@ def run_agent_loop(session_id: str, task: str, q: queue.Queue):
                     "3) naming consistency, 4) interfacce compatibili. "
                     "Se tutto OK → done. Se problemi → fix con feedback specifico per chunk."
                 )
-                continue  # skip the default context assignment below
+                continue
 
             context = (f"Codice prodotto (iterazione {iteration}):\n```python\n{code}\n```\n"
                        + get_project_files_summary(task)
@@ -1432,11 +1491,15 @@ def run_agent_loop(session_id: str, task: str, q: queue.Queue):
             code = run_implementer(claude_client, openai_client, session_id, task,
                                    f"Correggi il codice:\n\nCODICE:\n{code}",
                                    feedback, iteration, implementer_model, q)
+            _slog.log_agent_output(_agent_key_for_log(implementer_model),
+                                   MODELS[implementer_model]["label"], code)
             context = (f"Codice corretto (iterazione {iteration}):\n```python\n{code}\n```\n"
                        + get_project_files_summary(task)
                        + "\nVerifica di nuovo.")
 
     total = session_costs[session_id]["total"]
+    _slog.log_end(False, f"Raggiunto limite di {max_iterations} iterazioni.",
+                  total, session_costs[session_id]["by_model"], iteration)
     emit(q, "loop_end", {
         "success": False, "summary": f"Raggiunto limite di {max_iterations} iterazioni.",
         "iterations": iteration, "total_cost": total,
@@ -1462,11 +1525,17 @@ def continue_agent_loop(session_id: str, followup: str, q: queue.Queue):
     combined_task = f"{task} | {followup}"
     emit(q, "loop_start", {"task": f"[Continuazione] {followup}"})
 
+    # ── Riusa o crea session logger ─────────────
+    if session_id not in session_loggers:
+        session_loggers[session_id] = SessionLogger(session_id, f"[Continuazione] {followup}")
+    _slog = session_loggers[session_id]
+    _slog._append(f"\n---\n\n## 🔄 Continuazione\n\n**Followup:** {followup.strip()}\n\n")
+
     classify_input = (
         f"TASK ORIGINALE: {task}\n\n"
-        f"CODICE GIÀ PRODOTTO ({len(code)} chars):\n```python\n{code[:800]}{'...' if len(code)>800 else ''}\n```\n\n"
+        f"CODICE GIA PRODOTTO ({len(code)} chars):\n```python\n{code[:800]}{'...' if len(code)>800 else ''}\n```\n\n"
         f"RICHIESTA DI CONTINUAZIONE: {followup}\n\n"
-        f"Valuta la difficoltà di questa modifica rispetto al codice esistente."
+        f"Valuta la difficolta' di questa modifica rispetto al codice esistente."
     )
     classification        = classify_task(claude_client, session_id, classify_input, q)
     difficulty            = classification.get("difficulty", "medium")
@@ -1481,18 +1550,19 @@ def continue_agent_loop(session_id: str, followup: str, q: queue.Queue):
 
     if needs_clarification and clarification_q:
         emit(q, "waiting_human", {"question": clarification_q, "session_id": session_id, "context": "clarification"})
+        _slog.log_user_question(clarification_q)
         clarification = wait_for_human(session_id, timeout=300)
         if clarification is None:
             emit(q, "timeout", {})
             return
         emit(q, "human_response", {"text": clarification})
+        _slog.log_user_answer(clarification)
         combined_task += f" | Chiarimento: {clarification}"
 
     override          = model_overrides.get(session_id, {})
     reasoner_model    = override.get("reasoner", suggested_reasoner)
     implementer_model = override.get("implementer", suggested_implementer)
 
-    # Fallback automatico se chiave mancante
     def _best_available(model_id: str, role: str) -> str:
         if MODELS.get(model_id, {}).get("available", False):
             return model_id
@@ -1564,9 +1634,13 @@ def continue_agent_loop(session_id: str, followup: str, q: queue.Queue):
     while iteration < start_iter + max_iterations:
         iteration += 1
         emit(q, "iteration_start", {"n": iteration, "max": start_iter + max_iterations})
+        _slog.log_iteration(iteration, start_iter + max_iterations)
 
         if stop_flags.get(session_id):
             stop_flags.pop(session_id, None)
+            _slog.log_end(False, "Interrotto dall'utente.",
+                          session_costs[session_id]["total"],
+                          session_costs[session_id]["by_model"], iteration)
             emit(q, "loop_end", {
                 "success": False, "summary": "Interrotto dall'utente.",
                 "iterations": iteration,
@@ -1583,6 +1657,10 @@ def continue_agent_loop(session_id: str, followup: str, q: queue.Queue):
             "status": status, "thoughts": result.get("thoughts", ""),
             "alignment": alignment, "iteration": iteration,
         })
+        _slog.log_agent_output(
+            "claude", MODELS[reasoner_model]["label"],
+            result.get("thoughts", "") or result.get("spec", "") or result.get("summary", "")
+        )
 
         if status == "done":
             total = session_costs[session_id]["total"]
@@ -1591,6 +1669,8 @@ def continue_agent_loop(session_id: str, followup: str, q: queue.Queue):
                 "reasoner": reasoner_model, "implementer": implementer_model,
                 "iteration": iteration,
             }
+            _slog.log_end(True, result.get("summary", ""), total,
+                          session_costs[session_id]["by_model"], iteration)
             emit(q, "loop_end", {
                 "success": True, "summary": result.get("summary", ""),
                 "iterations": iteration, "total_cost": total,
@@ -1602,11 +1682,13 @@ def continue_agent_loop(session_id: str, followup: str, q: queue.Queue):
             emit(q, "waiting_human", {
                 "question": result.get("question", ""), "session_id": session_id, "context": "loop"
             })
+            _slog.log_user_question(result.get("question", ""))
             human_resp = wait_for_human(session_id, timeout=int(os.environ.get("HUMAN_TIMEOUT", 300)))
             if human_resp is None:
                 emit(q, "timeout", {})
                 return
             emit(q, "human_response", {"text": human_resp})
+            _slog.log_user_answer(human_resp)
             context = f"Codice attuale:\n{code}\n\nRisposta utente: {human_resp}"
 
         elif status == "implement":
@@ -1614,6 +1696,8 @@ def continue_agent_loop(session_id: str, followup: str, q: queue.Queue):
             emit(q, "spec_ready", {"spec": spec})
             code = run_implementer(claude_client, openai_client, session_id, combined_task, spec, "",
                                    iteration, implementer_model, q)
+            _slog.log_agent_output(_agent_key_for_log(implementer_model),
+                                   MODELS[implementer_model]["label"], code)
             context = (f"Codice aggiornato (iterazione {iteration}):\n```python\n{code}\n```\n"
                        + get_project_files_summary(task)
                        + "\nVerifica correttezza e completezza.")
@@ -1627,11 +1711,15 @@ def continue_agent_loop(session_id: str, followup: str, q: queue.Queue):
             code = run_implementer(claude_client, openai_client, session_id, combined_task,
                                    f"Correggi il codice:\n\nCODICE:\n{code}",
                                    feedback, iteration, implementer_model, q)
+            _slog.log_agent_output(_agent_key_for_log(implementer_model),
+                                   MODELS[implementer_model]["label"], code)
             context = (f"Codice corretto (iterazione {iteration}):\n```python\n{code}\n```\n"
                        + get_project_files_summary(task)
                        + "\nVerifica di nuovo.")
 
     total = session_costs[session_id]["total"]
+    _slog.log_end(False, "Raggiunto limite iterazioni.", total,
+                  session_costs[session_id]["by_model"], iteration)
     emit(q, "loop_end", {
         "success": False, "summary": "Raggiunto limite iterazioni.",
         "iterations": iteration, "total_cost": total,
@@ -1689,7 +1777,7 @@ def continue_run():
     if not session_id or not followup:
         return jsonify({"error": "session_id o followup mancante"}), 400
     if session_id not in session_state:
-        return jsonify({"error": "sessione non trovata o già scaduta"}), 404
+        return jsonify({"error": "sessione non trovata o gia scaduta"}), 404
     q = queue.Queue()
     event_queues[session_id] = q
     threading.Thread(target=continue_agent_loop, args=(session_id, followup, q), daemon=True).start()
@@ -1728,7 +1816,6 @@ def download():
 
 @app.route("/memory/append", methods=["POST"])
 def memory_append():
-    """Aggiunge un suggerimento approvato a MEMORY.md."""
     data    = request.json or {}
     section = (data.get("section") or "").strip()
     text    = (data.get("text") or "").strip()
@@ -1741,10 +1828,34 @@ def memory_append():
 
 @app.route("/memory", methods=["GET"])
 def memory_get():
-    """Ritorna il contenuto attuale di MEMORY.md."""
     if not MEMORY_PATH.exists():
         return jsonify({"content": ""})
     return jsonify({"content": MEMORY_PATH.read_text(encoding="utf-8")})
+
+@app.route("/logs")
+def list_logs():
+    """Elenca tutti i log .md disponibili."""
+    logs = sorted(LOGS_DIR.glob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True)
+    return jsonify([
+        {
+            "session_id": p.stem,
+            "size":       p.stat().st_size,
+            "modified":   time.strftime("%Y-%m-%d %H:%M:%S",
+                                        time.localtime(p.stat().st_mtime)),
+        }
+        for p in logs
+    ])
+
+@app.route("/logs/<session_id>")
+def get_log(session_id: str):
+    """Scarica il log .md della sessione."""
+    log_path = LOGS_DIR / f"{session_id}.md"
+    if not log_path.exists():
+        return "Log non trovato", 404
+    from flask import send_file
+    return send_file(log_path, mimetype="text/markdown",
+                     as_attachment=True,
+                     download_name=f"ettorino_{session_id}.md")
 
 @app.route("/models")
 def models_route():
